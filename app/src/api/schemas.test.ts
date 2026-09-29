@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+	askPeerRequestSchema,
+	askPeerResponseSchema,
+	eventSchema,
 	healthResponseSchema,
+	ledgerResponseSchema,
+	outcomeRequestSchema,
+	peerSchema,
+	peopleListItemSchema,
+	privacyReceiptSchema,
+	pushSubscriptionSchema,
+	questionLogEntrySchema,
+	reassuranceAnswerSchema,
+	sharingRuleSchema,
+	sharingRulesResponseSchema,
 	watcherSchema,
 	watchResultSchema,
+	worryCreateRequestSchema,
 	worrySchema,
 } from "./schemas";
 
@@ -131,5 +145,166 @@ describe("watcherSchema", () => {
 				false,
 			);
 		}
+	});
+});
+
+// --- T-07 additions below ---
+
+describe("worryCreateRequestSchema / outcomeRequestSchema", () => {
+	it("accepts a worry creation request", () => {
+		expect(worryCreateRequestSchema.safeParse({ text: "x" }).success).toBe(
+			true,
+		);
+	});
+
+	it("rejects a non-boolean outcome", () => {
+		expect(
+			outcomeRequestSchema.safeParse({ fear_came_true: "yes" }).success,
+		).toBe(false);
+	});
+});
+
+const peer = {
+	id: `p_${ULID}`,
+	display_name: "Anna",
+	public_key: "base64key",
+	paired_at: "2026-09-29T08:00:00Z",
+};
+
+describe("peerSchema / peopleListItemSchema", () => {
+	it("accepts a contract-shaped peer", () => {
+		expect(peerSchema.safeParse(peer).success).toBe(true);
+	});
+
+	it("rejects a peer id with the wrong prefix", () => {
+		expect(peerSchema.safeParse({ ...peer, id: `w_${ULID}` }).success).toBe(
+			false,
+		);
+	});
+
+	it("accepts a people list item with a null last answer", () => {
+		expect(
+			peopleListItemSchema.safeParse({
+				peer,
+				last_answer: null,
+				last_answer_at: null,
+			}).success,
+		).toBe(true);
+	});
+});
+
+describe("reassuranceAnswerSchema / askPeerResponseSchema", () => {
+	const answer = {
+		level: "unknown",
+		reason: "not_enough_data",
+		ts: "2026-09-29T08:00:00Z",
+	};
+
+	it("accepts a fixed-vocabulary answer", () => {
+		expect(reassuranceAnswerSchema.safeParse(answer).success).toBe(true);
+	});
+
+	it("rejects free text outside the vocabulary", () => {
+		expect(
+			reassuranceAnswerSchema.safeParse({ ...answer, level: "fine!" }).success,
+		).toBe(false);
+	});
+
+	it("accepts an ask-peer response with a privacy receipt", () => {
+		const receipt = {
+			bytes_sent: 0,
+			fields_shared: ["level", "reason", "ts"],
+			location_shared: false,
+			egress_log_ref: "n/a",
+		};
+		expect(askPeerResponseSchema.safeParse({ answer, receipt }).success).toBe(
+			true,
+		);
+		expect(privacyReceiptSchema.safeParse(receipt).success).toBe(true);
+	});
+
+	it("rejects an ask-peer request question outside ok|home", () => {
+		expect(askPeerRequestSchema.safeParse({ q: "location" }).success).toBe(
+			false,
+		);
+	});
+});
+
+describe("sharingRuleSchema / sharingRulesResponseSchema", () => {
+	const rule = {
+		peer_id: `p_${ULID}`,
+		allowed_questions: ["ok"],
+		allowed_levels: ["normal", "unusual"],
+		active: true,
+	};
+
+	it("accepts a contract-shaped sharing rule", () => {
+		expect(sharingRuleSchema.safeParse(rule).success).toBe(true);
+	});
+
+	it("accepts a sharing-rules response with a questions log", () => {
+		const entry = {
+			id: "q1",
+			peer_id: `p_${ULID}`,
+			question: "ok",
+			asked_at: "2026-09-29T08:00:00Z",
+			answer_level: "normal",
+		};
+		expect(questionLogEntrySchema.safeParse(entry).success).toBe(true);
+		expect(
+			sharingRulesResponseSchema.safeParse({
+				rules: [rule],
+				questions_log: [entry],
+			}).success,
+		).toBe(true);
+	});
+});
+
+describe("pushSubscriptionSchema", () => {
+	it("accepts a web-push subscription", () => {
+		expect(
+			pushSubscriptionSchema.safeParse({
+				endpoint: "https://push.example/abc",
+				keys: { p256dh: "x", auth: "y" },
+			}).success,
+		).toBe(true);
+	});
+});
+
+describe("ledgerResponseSchema", () => {
+	it("accepts the contract-shaped ledger and pins locations_shared to 0", () => {
+		const ledger = {
+			worries_total: 1,
+			active: 1,
+			never_needed_you: 0,
+			needed_you: 0,
+			median_warning_lead_h: 0,
+			came_true_rate: 0,
+			came_true_by_type: {},
+			watchers_built: 0,
+			sandboxes_live: 0,
+			endpoints_denied: 0,
+			peer_questions_answered: 0,
+			locations_shared: 0,
+		};
+		expect(ledgerResponseSchema.safeParse(ledger).success).toBe(true);
+		expect(
+			ledgerResponseSchema.safeParse({ ...ledger, locations_shared: 1 })
+				.success,
+		).toBe(false);
+	});
+});
+
+describe("eventSchema", () => {
+	it("accepts a known event type", () => {
+		expect(
+			eventSchema.safeParse({ type: "worry.updated", data: {} }).success,
+		).toBe(true);
+	});
+
+	it("rejects an unknown event type", () => {
+		expect(
+			eventSchema.safeParse({ type: "worry.deleted", data: {} }).success,
+		).toBe(false);
 	});
 });
