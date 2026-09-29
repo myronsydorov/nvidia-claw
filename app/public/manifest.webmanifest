@@ -1,0 +1,17 @@
+{
+	"name": "Custody",
+	"short_name": "Custody",
+	"description": "An AI that worries for you, and speaks up only when you need to act.",
+	"start_url": "/",
+	"display": "standalone",
+	"background_color": "#ffffff",
+	"theme_color": "#7c6f9c",
+	"icons": [
+		{
+			"src": "/icon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml",
+			"purpose": "any"
+		}
+	]
+}

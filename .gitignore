@@ -1,0 +1,28 @@
+# secrets
+.env
+.env.*.local
+.claude/settings.local.json
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# node / app
+node_modules/
+dist/
+.vite/
+
+# misc
+.DS_Store
+*.log
