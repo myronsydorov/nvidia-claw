@@ -45,6 +45,19 @@ Change this file **first**, then the Pydantic models (`warden/src/warden/models.
 ```
 Invalid JSON or a missing `status` is treated as `error`. Three `error`s in a row pause the watcher and notify the user once.
 
+### TimelineEvent
+| field | type | notes |
+|---|---|---|
+| `at` | datetime | |
+| `kind` | enum `created \| triaged \| compiled \| approval_requested \| approved \| denied \| checked \| act_now \| resolved \| let_go \| parked \| failed` | |
+| `text` | str | ≤ 140 chars, plain language, shown as-is in the app |
+
+### WorrySummary (items of `GET /api/worries`)
+`{ "worry": Worry, "last_result": WatchResult | null }`
+
+### WorryDetail (`GET /api/worries/{id}`)
+`{ "worry": Worry, "watcher": Watcher | null, "timeline": [TimelineEvent] }` (timeline oldest first)
+
 ### AdapterDeclaration (`warden/src/warden/adapters/*.py`)
 ```python
 Adapter(
@@ -85,8 +98,8 @@ Any field or value outside this vocabulary gets **rejected by the sender's own W
 | method | path | purpose |
 |---|---|---|
 | POST | `/api/worries` | `{ text }` → Worry (status `triaging`) |
-| GET | `/api/worries` | list with filters `status=` |
-| GET | `/api/worries/{id}` | Worry + Watcher + timeline |
+| GET | `/api/worries` | list[WorrySummary], with filters `status=` |
+| GET | `/api/worries/{id}` | WorryDetail (Worry + Watcher + timeline) |
 | POST | `/api/worries/{id}/approve` | approve the watcher's policy → `active` |
 | POST | `/api/worries/{id}/deny` | → `parked` |
 | POST | `/api/worries/{id}/let-go` | user closes it → `resolved` |

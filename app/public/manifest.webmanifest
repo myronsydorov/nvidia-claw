@@ -4,8 +4,9 @@
 	"description": "An AI that worries for you, and speaks up only when you need to act.",
 	"start_url": "/",
 	"display": "standalone",
-	"background_color": "#ffffff",
-	"theme_color": "#7c6f9c",
+	"orientation": "portrait",
+	"background_color": "#161412",
+	"theme_color": "#161412",
 	"icons": [
 		{
 			"src": "/icon.svg",
