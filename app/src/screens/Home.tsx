@@ -11,6 +11,8 @@ function subline(items: WorrySummary[]): string {
 	const held = items.filter((i) => i.worry.status !== "parked").length;
 	if (held === 0) return "Nothing in custody.";
 	const noun = held === 1 ? "worry" : "worries";
+	const waiting = items.filter((i) => i.worry.status === "needs_you").length;
+	if (waiting > 0) return `${held} ${noun} in custody. ${waiting} needs you.`;
 	return `${held} ${noun} in custody. Nothing needs you.`;
 }
 

@@ -15,14 +15,19 @@ function Body({ initial }: { initial: Detail }) {
 	const last = watcher?.last_result ?? null;
 	const open = worry.status !== "resolved";
 
+	const [failed, setFailed] = useState(false);
+
 	const act = async (op: (id: string) => Promise<Detail>, home: boolean) => {
 		setBusy(true);
-		const next = await op(worry.id);
-		if (home) navigate({ name: "home" });
-		else {
+		setFailed(false);
+		try {
+			const next = await op(worry.id);
+			if (home) return navigate({ name: "home" });
 			setDetail(next);
-			setBusy(false);
+		} catch {
+			setFailed(true);
 		}
+		setBusy(false);
 	};
 
 	return (
@@ -101,6 +106,12 @@ function Body({ initial }: { initial: Detail }) {
 					))}
 				</ol>
 			</section>
+
+			{failed && (
+				<p className="mt-10 text-[15px] text-muted">
+					That didn't go through. Nothing changed.
+				</p>
+			)}
 
 			{open && (
 				<div className="mt-12 flex">

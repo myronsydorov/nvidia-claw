@@ -1,7 +1,6 @@
-from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 # Mirrors docs/CONTRACTS.md. Keep in sync with app/src/api/schemas.ts.
 
@@ -45,13 +44,13 @@ class Worry(BaseModel):
     text: str
     type: WorryType
     fear: str
-    deadline: datetime | None
+    deadline: AwareDatetime | None
     status: WorryStatus
     watcher_id: str | None = Field(pattern=r"^wt_[0-9A-HJKMNP-TV-Z]{26}$")
     resolution: str | None
     fear_came_true: bool | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
 
 
 class PermissionLine(BaseModel):
@@ -63,7 +62,7 @@ class PermissionLine(BaseModel):
 
 class Evidence(BaseModel):
     source: str
-    checked_at: datetime
+    checked_at: AwareDatetime
     data: dict[str, Any]
 
 
@@ -89,7 +88,7 @@ class Watcher(BaseModel):
 
 
 class TimelineEvent(BaseModel):
-    at: datetime
+    at: AwareDatetime
     kind: TimelineKind
     text: str = Field(max_length=140)
 
