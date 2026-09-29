@@ -9,8 +9,8 @@ Change this file **first**, then the Pydantic models (`warden/src/warden/models.
 |---|---|---|
 | `id` | `w_<ulid>` | |
 | `text` | str | as the user wrote or said it |
-| `type` | enum `checkable \| deadline \| person \| social \| uncontrollable` | set by triage |
-| `fear` | str | the precise bad outcome, e.g. "parcel not delivered by 2026-10-02T16:00Z" |
+| `type` | enum `unclassified \| checkable \| deadline \| person \| social \| uncontrollable` | `unclassified` from creation until triage sets a real value |
+| `fear` | str | the precise bad outcome, e.g. "parcel not delivered by 2026-10-02T16:00Z"; `""` until triage runs |
 | `deadline` | datetime? | after this, the worry resolves automatically |
 | `status` | enum `triaging \| compiling \| awaiting_approval \| watching \| needs_you \| resolved \| parked \| failed` | |
 | `watcher_id` | `wt_<ulid>`? | |
@@ -45,6 +45,19 @@ Change this file **first**, then the Pydantic models (`warden/src/warden/models.
 ```
 Invalid JSON or a missing `status` is treated as `error`. Three `error`s in a row pause the watcher and notify the user once.
 
+### TimelineEvent
+| field | type | notes |
+|---|---|---|
+| `at` | datetime | |
+| `kind` | enum `created \| triaged \| compiled \| approval_requested \| approved \| denied \| checked \| act_now \| resolved \| let_go \| parked \| failed` | |
+| `text` | str | ≤ 140 chars, plain language, shown as-is in the app |
+
+### WorrySummary (items of `GET /api/worries`)
+`{ "worry": Worry, "last_result": WatchResult | null }`
+
+### WorryDetail (`GET /api/worries/{id}`)
+`{ "worry": Worry, "watcher": Watcher | null, "timeline": [TimelineEvent] }` (timeline oldest first)
+
 ### AdapterDeclaration (`warden/src/warden/adapters/*.py`)
 ```python
 Adapter(
@@ -77,6 +90,21 @@ Any field or value outside this vocabulary gets **rejected by the sender's own W
 ### PrivacyReceipt (shown in the app)
 `{ "bytes_sent": 212, "fields_shared": ["level","reason","ts"], "location_shared": false, "egress_log_ref": "…" }`
 
+### PeopleListItem (items of `GET /api/people`)
+`{ "peer": Peer, "last_answer": ReassuranceAnswer | null, "last_answer_at": datetime | null }`
+
+### AskPeerResponse (`POST /api/people/{peer_id}/ask`)
+`{ "answer": ReassuranceAnswer, "receipt": PrivacyReceipt }`
+
+### QuestionLogEntry (an entry in `SharingRulesResponse.questions_log`)
+`{ "id": str, "peer_id": "p_<ulid>", "question": "ok | home", "asked_at": datetime, "answer_level": "normal | unusual | help | unknown" }`
+
+### SharingRulesResponse (`GET/PUT /api/sharing-rules`)
+`{ "rules": [SharingRule], "questions_log": [QuestionLogEntry] }` (questions_log newest first). `PUT` takes and returns the same shape and replaces the full `rules` list; `questions_log` is read-only (server-maintained).
+
+### PushSubscription (body of `POST /api/push/subscribe`)
+`{ "endpoint": str, "keys": { "p256dh": str, "auth": str } }`
+
 ### Relay API (ciphertext only)
 - `POST /v1/mailbox/{recipient_key_id}` with body `{ ciphertext, sender_key_id }` → `202`
 - `GET /v1/mailbox/{my_key_id}?since=` → `[ { id, ciphertext, sender_key_id, ts } ]`
@@ -85,19 +113,21 @@ Any field or value outside this vocabulary gets **rejected by the sender's own W
 | method | path | purpose |
 |---|---|---|
 | POST | `/api/worries` | `{ text }` → Worry (status `triaging`) |
-| GET | `/api/worries` | list with filters `status=` |
-| GET | `/api/worries/{id}` | Worry + Watcher + timeline |
-| POST | `/api/worries/{id}/approve` | approve the watcher's policy → `active` |
-| POST | `/api/worries/{id}/deny` | → `parked` |
-| POST | `/api/worries/{id}/let-go` | user closes it → `resolved` |
-| POST | `/api/worries/{id}/outcome` | `{ fear_came_true: bool }` |
-| GET | `/api/people` | peers + last answer |
-| POST | `/api/people/{peer_id}/ask` | `{ q }` → ReassuranceAnswer + PrivacyReceipt |
-| GET/PUT | `/api/sharing-rules` | what others may ask about me; plus the log of questions |
-| GET | `/api/ledger` | stats-wall aggregates |
+| GET | `/api/worries` | list[WorrySummary], with filters `status=` |
+| GET | `/api/worries/{id}` | WorryDetail (Worry + Watcher + timeline) |
+| POST | `/api/worries/{id}/approve` | approve the watcher's policy → `active`; returns WorryDetail |
+| POST | `/api/worries/{id}/deny` | → `parked`; returns WorryDetail |
+| POST | `/api/worries/{id}/let-go` | user closes it → `resolved`; returns WorryDetail |
+| POST | `/api/worries/{id}/outcome` | `{ fear_came_true: bool }` → returns WorryDetail |
+| GET | `/api/people` | list[PeopleListItem] — peers + last answer |
+| POST | `/api/people/{peer_id}/ask` | `{ q }` → AskPeerResponse (ReassuranceAnswer + PrivacyReceipt) |
+| GET/PUT | `/api/sharing-rules` | SharingRulesResponse — what others may ask about me; plus the log of questions |
+| GET | `/api/ledger` | LedgerResponse — stats-wall aggregates |
 | GET | `/api/events` | server-sent events: `worry.updated`, `watcher.result`, `approval.needed`, `alert.act_now`, `peer.answer` |
-| POST | `/api/push/subscribe` | web-push subscription |
+| POST | `/api/push/subscribe` | PushSubscription body → `204` |
 | GET | `/api/health` | liveness + sandbox count — `{ "status": "ok", "sandboxes_live": 0 }` |
+
+All `/api/*` routes, including `/api/health`, require the bearer device token; a missing or wrong token is `401`.
 
 ## 4. MCP tools (Warden → brain)
 `custody.hand_over(text)`, `custody.list(status?)`, `custody.get(id)`, `custody.let_go(id)`, `custody.record_outcome(id, came_true)`, `custody.ask_peer(peer_id, q)`, `custody.ledger()`.
