@@ -10,8 +10,10 @@ Status: `todo · doing · done · cut`. Every task has **acceptance criteria and
 | T-02 | You | Turn on OpenClaw's `/v1/chat/completions` endpoint, bound to loopback; create the token | `curl -s localhost:<port>/v1/chat/completions …` returns a completion; the port is not reachable from outside | todo |
 | T-03 | Claude | Repo scaffold: structure from AGENTS.md, Makefile, uv, pnpm, ruff/mypy/biome, CI, `.gitignore`, `.env.example` | `make lint typecheck test` passes on the empty skeleton; CI passes | done* |
 | T-04 | Claude + You | **SPIKE:** sandbox per watcher. Create from the `watcher_runtime` image → apply the generated policy → exec `run.py` → parse the JSON → delete | Timings recorded in ADR-0001; a request to a host outside the policy is **denied and visible in the logs** | todo |
-| T-05 | Claude | App shell on mock data: Home, Hand-over (animated steps + permission card), Worry detail; PWA manifest; design tokens | `pnpm -C app build` passes; a 390×844 screenshot matches the design notes | todo |
+| T-05 | Claude | App shell on mock data: Home, Hand-over (animated steps + permission card), Worry detail; PWA manifest; design tokens | `pnpm -C app build` passes; a 390×844 screenshot matches the design notes | done† |
 | T-06 | You | Start a real worry log (plain notes) to feed in once L1 works | ≥ 5 real worries written down | todo |
+
+† T-05: app shell runs on an in-memory mock API (`app/src/api/client.ts`); fixtures parse through the zod contract schemas. CONTRACTS.md gained `TimelineEvent`, `WorrySummary` and `WorryDetail` to pin down the `/api/worries` response shapes.
 
 \* T-03: `make lint typecheck test` verified locally (evidence in the PR). CI itself is unverified until the first push to GitHub triggers `.github/workflows/ci.yml`.
 

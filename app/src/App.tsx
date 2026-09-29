@@ -1,9 +1,18 @@
+import { useRoute } from "./lib/router";
+import { HandOver } from "./screens/HandOver";
+import { Home } from "./screens/Home";
+import { WorryDetail } from "./screens/WorryDetail";
+
 function App() {
-	return (
-		<main className="flex min-h-svh flex-col items-center justify-center bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-			<p className="text-3xl font-light tracking-tight">All quiet.</p>
-		</main>
-	);
+	const route = useRoute();
+	switch (route.name) {
+		case "home":
+			return <Home />;
+		case "hand-over":
+			return <HandOver key={route.text} text={route.text} />;
+		case "worry":
+			return <WorryDetail id={route.id} />;
+	}
 }
 
 export default App;
