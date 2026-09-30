@@ -14,7 +14,7 @@ import aiosqlite
 import pytest
 from warden.db import SCHEMA, Store
 from warden.events import EventBus
-from warden.models import Event, Watcher, Worry
+from warden.models import Event, TimelineEvent, Watcher, Worry
 from warden.sandbox.driver import ExecResult, SandboxHandle
 from warden.scheduler import PushKind, Scheduler
 from warden.worry_rows import parse_row, save_watcher, save_worry
@@ -311,6 +311,61 @@ async def test_let_go_during_exec_discards_the_result(h: Harness) -> None:
     assert (await h.watcher()).last_result is None
     worry, _ = await h.worry()
     assert worry.status == "watching"
+
+
+async def test_scheduler_run_cannot_interleave_with_a_route(
+    h: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A genuine race, not the stale-state check above: while the scheduler
+    holds store.write_lock applying a result, a concurrent let-go must wait
+    for it. Proves write_lock actually serializes the scheduler against the
+    routes (not only against itself) -- remove the lock and this fails.
+    """
+    interleaved = False
+    raced = False
+    race_tasks: list[asyncio.Task[None]] = []
+    real_put = h.store.watchers.put
+
+    async def concurrent_let_go() -> None:
+        # Mirrors routers.worries.let_go_worry's core, without the FastAPI plumbing.
+        async with h.store.write_lock:
+            row = await h.store.worries.get(WORRY_ID)
+            assert row is not None
+            worry, timeline = parse_row(row)
+            worry.status = "resolved"
+            timeline.append(
+                TimelineEvent(at=worry.updated_at, kind="let_go", text="You let it go.")
+            )
+            watcher_data = await h.store.watchers.get(WATCHER_ID)
+            assert watcher_data is not None
+            watcher = Watcher.model_validate(watcher_data)
+            watcher.state = "retired"
+            await save_watcher(h.store, watcher)
+            await save_worry(h.store, worry, timeline)
+
+    async def put_then_race(*args: Any, **kwargs: Any) -> None:
+        nonlocal interleaved, raced
+        if raced:
+            await real_put(*args, **kwargs)
+            return
+        raced = True
+        race_tasks.append(asyncio.create_task(concurrent_let_go()))
+        await asyncio.sleep(0.05)  # give the let-go every chance to interleave
+        interleaved = race_tasks[0].done()  # True only if write_lock failed to block it
+        await real_put(*args, **kwargs)
+        # Not awaited here: this call is still inside the scheduler's own
+        # `async with store.write_lock`, and concurrent_let_go() needs that
+        # same lock -- awaiting it here would deadlock. It completes once
+        # this call returns and that lock is released.
+
+    monkeypatch.setattr(h.store.watchers, "put", put_then_race)
+    await h.run(result("ok"))
+    await race_tasks[0]
+
+    assert interleaved is False
+    worry, _ = await h.worry()
+    assert worry.status == "resolved"
+    assert (await h.watcher()).state == "retired"
 
 
 async def test_hostile_output_counts_as_error_not_a_crash(h: Harness) -> None:
