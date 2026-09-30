@@ -16,6 +16,7 @@ from warden.models import (
     WorrySummary,
 )
 from warden.state import get_driver, get_events, get_store
+from warden.worry_rows import save_watcher, save_worry
 
 router = APIRouter()
 
@@ -39,15 +40,6 @@ async def _detail(store: Store, row: dict[str, Any]) -> WorryDetail:
         watcher = Watcher.model_validate(watcher_data) if watcher_data else None
     timeline = [TimelineEvent.model_validate(e) for e in row["timeline"]]
     return WorryDetail(worry=worry, watcher=watcher, timeline=timeline)
-
-
-async def _save(store: Store, worry: Worry, timeline: list[TimelineEvent]) -> dict[str, Any]:
-    row = {
-        "worry": worry.model_dump(mode="json"),
-        "timeline": [t.model_dump(mode="json") for t in timeline],
-    }
-    await store.worries.put(worry.id, row, status=worry.status)
-    return row
 
 
 async def _require_awaiting_approval(store: Store, worry: Worry) -> Watcher:
@@ -87,7 +79,7 @@ async def create_worry(body: WorryCreateRequest, request: Request) -> Worry:
         updated_at=now,
     )
     timeline = [TimelineEvent(at=now, kind="created", text="You handed it over.")]
-    await _save(store, worry, timeline)
+    await save_worry(store, worry, timeline)
     await get_events(request).publish("worry.updated", {"worry_id": worry.id})
     return worry
 
@@ -120,97 +112,95 @@ async def get_worry(worry_id: str, request: Request) -> WorryDetail:
 @router.post("/api/worries/{worry_id}/approve")
 async def approve_worry(worry_id: str, request: Request) -> WorryDetail:
     store = get_store(request)
-    row = await _row(store, worry_id)
-    worry = Worry.model_validate(row["worry"])
-    watcher = await _require_awaiting_approval(store, worry)
+    async with store.write_lock:
+        row = await _row(store, worry_id)
+        worry = Worry.model_validate(row["worry"])
+        watcher = await _require_awaiting_approval(store, worry)
 
-    driver = get_driver(request)
-    await driver.create(watcher.sandbox_name, image="watcher-base")
-    await driver.apply_policy(watcher.sandbox_name, watcher.policy_yaml)
-    watcher.state = "active"
+        driver = get_driver(request)
+        await driver.create(watcher.sandbox_name, image="watcher-base")
+        await driver.apply_policy(watcher.sandbox_name, watcher.policy_yaml)
+        watcher.state = "active"
 
-    now = _now()
-    worry.status = "watching"
-    worry.updated_at = now
-    timeline = [TimelineEvent.model_validate(e) for e in row["timeline"]]
-    timeline.append(
-        TimelineEvent(at=now, kind="approved", text="You allowed it. Watching quietly.")
-    )
+        now = _now()
+        worry.status = "watching"
+        worry.updated_at = now
+        timeline = [TimelineEvent.model_validate(e) for e in row["timeline"]]
+        timeline.append(
+            TimelineEvent(at=now, kind="approved", text="You allowed it. Watching quietly.")
+        )
 
-    await store.watchers.put(
-        watcher.id, watcher.model_dump(mode="json"), worry_id=worry.id, state=watcher.state
-    )
-    row = await _save(store, worry, timeline)
-    await get_events(request).publish("worry.updated", {"worry_id": worry.id})
-    return await _detail(store, row)
+        await save_watcher(store, watcher)
+        row = await save_worry(store, worry, timeline)
+        await get_events(request).publish("worry.updated", {"worry_id": worry.id})
+        return await _detail(store, row)
 
 
 @router.post("/api/worries/{worry_id}/deny")
 async def deny_worry(worry_id: str, request: Request) -> WorryDetail:
     store = get_store(request)
-    row = await _row(store, worry_id)
-    worry = Worry.model_validate(row["worry"])
-    watcher = await _require_awaiting_approval(store, worry)
-    watcher.state = "retired"
+    async with store.write_lock:
+        row = await _row(store, worry_id)
+        worry = Worry.model_validate(row["worry"])
+        watcher = await _require_awaiting_approval(store, worry)
+        watcher.state = "retired"
 
-    now = _now()
-    worry.status = "parked"
-    worry.updated_at = now
-    timeline = [TimelineEvent.model_validate(e) for e in row["timeline"]]
-    timeline.append(TimelineEvent(at=now, kind="denied", text="You said no."))
+        now = _now()
+        worry.status = "parked"
+        worry.updated_at = now
+        timeline = [TimelineEvent.model_validate(e) for e in row["timeline"]]
+        timeline.append(TimelineEvent(at=now, kind="denied", text="You said no."))
 
-    await store.watchers.put(
-        watcher.id, watcher.model_dump(mode="json"), worry_id=worry.id, state=watcher.state
-    )
-    row = await _save(store, worry, timeline)
-    await get_events(request).publish("worry.updated", {"worry_id": worry.id})
-    return await _detail(store, row)
+        await save_watcher(store, watcher)
+        row = await save_worry(store, worry, timeline)
+        await get_events(request).publish("worry.updated", {"worry_id": worry.id})
+        return await _detail(store, row)
 
 
 @router.post("/api/worries/{worry_id}/let-go")
 async def let_go_worry(worry_id: str, request: Request) -> WorryDetail:
     store = get_store(request)
-    row = await _row(store, worry_id)
-    worry = Worry.model_validate(row["worry"])
+    async with store.write_lock:
+        row = await _row(store, worry_id)
+        worry = Worry.model_validate(row["worry"])
 
-    now = _now()
-    worry.status = "resolved"
-    worry.updated_at = now
-    timeline = [TimelineEvent.model_validate(e) for e in row["timeline"]]
-    timeline.append(TimelineEvent(at=now, kind="let_go", text="You let it go."))
+        now = _now()
+        worry.status = "resolved"
+        worry.updated_at = now
+        timeline = [TimelineEvent.model_validate(e) for e in row["timeline"]]
+        timeline.append(TimelineEvent(at=now, kind="let_go", text="You let it go."))
 
-    if worry.watcher_id is not None:
-        watcher_data = await store.watchers.get(worry.watcher_id)
-        if watcher_data is not None:
-            watcher = Watcher.model_validate(watcher_data)
-            if watcher.state == "active":
-                try:
-                    await get_driver(request).delete(watcher.sandbox_name)
-                except KeyError:
-                    pass  # already gone (e.g. driver state lost across a restart)
-            watcher.state = "retired"
-            await store.watchers.put(
-                watcher.id, watcher.model_dump(mode="json"), worry_id=worry.id, state=watcher.state
-            )
+        if worry.watcher_id is not None:
+            watcher_data = await store.watchers.get(worry.watcher_id)
+            if watcher_data is not None:
+                watcher = Watcher.model_validate(watcher_data)
+                if watcher.state in ("active", "paused"):  # a paused watcher keeps its sandbox
+                    try:
+                        await get_driver(request).delete(watcher.sandbox_name)
+                    except KeyError:
+                        pass  # already gone (e.g. driver state lost across a restart)
+                watcher.state = "retired"
+                await save_watcher(store, watcher)
 
-    row = await _save(store, worry, timeline)
-    await get_events(request).publish("worry.updated", {"worry_id": worry.id})
-    return await _detail(store, row)
+        row = await save_worry(store, worry, timeline)
+        await get_events(request).publish("worry.updated", {"worry_id": worry.id})
+        return await _detail(store, row)
 
 
 @router.post("/api/worries/{worry_id}/outcome")
 async def record_outcome(worry_id: str, body: OutcomeRequest, request: Request) -> WorryDetail:
     store = get_store(request)
-    row = await _row(store, worry_id)
-    worry = Worry.model_validate(row["worry"])
-    if worry.status != "resolved":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="worry is not resolved yet"
-        )
-    worry.fear_came_true = body.fear_came_true
-    worry.updated_at = _now()
-    timeline = [TimelineEvent.model_validate(e) for e in row["timeline"]]
+    async with store.write_lock:
+        row = await _row(store, worry_id)
+        worry = Worry.model_validate(row["worry"])
+        if worry.status != "resolved":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="worry is not resolved yet"
+            )
+        worry.fear_came_true = body.fear_came_true
+        worry.updated_at = _now()
+        timeline = [TimelineEvent.model_validate(e) for e in row["timeline"]]
 
-    row = await _save(store, worry, timeline)
-    await get_events(request).publish("worry.updated", {"worry_id": worry.id})
-    return await _detail(store, row)
+        row = await save_worry(store, worry, timeline)
+        await get_events(request).publish("worry.updated", {"worry_id": worry.id})
+        return await _detail(store, row)

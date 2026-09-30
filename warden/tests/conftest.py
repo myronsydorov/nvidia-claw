@@ -14,6 +14,7 @@ def warden_test_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     """
     monkeypatch.setenv("CUSTODY_SANDBOX", "mock")
     monkeypatch.setenv("WARDEN_DEVICE_TOKEN", "test-device-token")
+    monkeypatch.setenv("WARDEN_SCHEDULER", "off")  # route tests drive state; no background ticks
     with tempfile.TemporaryDirectory() as tmp:
         db_path = f"{tmp}/warden-test.db"
         monkeypatch.setenv("WARDEN_DB_PATH", db_path)

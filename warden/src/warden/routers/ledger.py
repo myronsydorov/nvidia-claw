@@ -30,7 +30,7 @@ async def get_ledger(request: Request) -> LedgerResponse:
         came_true_rate=0.0,
         came_true_by_type={},
         watchers_built=await store.watchers.count(),
-        sandboxes_live=await store.watchers.count(state="active"),
+        sandboxes_live=await store.sandboxes_live(),
         endpoints_denied=0,
         peer_questions_answered=0,
     )
