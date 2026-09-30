@@ -1,0 +1,18 @@
+# provisional policy schema — real OpenShell CLI syntax pinned by T-04 (ADR-0001)
+sandbox: cw-multi1
+egress:
+- host: api-eu.dhl.com
+  port: 443
+  method: GET
+  path: /track/shipments
+  why: check parcel status
+- host: api.open-meteo.com
+  port: 443
+  method: GET
+  path: /v1/forecast
+  why: check the weather forecast
+- host: v6.bvg.transport.rest
+  port: 443
+  method: GET
+  path: /stops/900000100003/departures
+  why: check departures for the platform near home

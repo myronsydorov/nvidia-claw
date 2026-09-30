@@ -62,11 +62,21 @@ Invalid JSON or a missing `status` is treated as `error`. Three `error`s in a ro
 ```python
 Adapter(
   name="parcel_dhl",
-  endpoints=[Endpoint(host="api-eu.dhl.com", port=443, method="GET", path="/track/shipments")],
+  endpoints=[Endpoint(host="api-eu.dhl.com", port=443, method="GET", path="/track/shipments",
+                       why="check parcel status")],
   secrets=["DHL_API_KEY"],        # injected by the OpenShell provider, never written into code
   description="Track a DHL shipment by tracking number")
 ```
-v1 adapters: `http_json`, `rss`, `web_diff`, `imap_search`, `ics_calendar`, `weather_openmeteo`, `transit_bvg`, `parcel_dhl`, `flight_status`.
+Every `Endpoint.path` is an exact literal path, never a prefix or wildcard — a dynamic identifier
+(a tracking number, a stop ID) belongs in the query string, or gets baked into one exact path
+string at declare-time. `Endpoint.why` becomes `PermissionLine.why` on the generated policy card,
+so it is declared once per endpoint, not threaded through separately. Adapters with a provider host
+fixed at build time (`parcel_dhl`, `weather_openmeteo`, `flight_status`) expose a static
+`ADAPTER: Adapter` constant; adapters whose host and/or path a worry supplies at compile time
+(`transit_bvg`'s stop ID; `web_diff`, `http_json`, `rss`, `ics_calendar`'s target URL) expose a
+`declare(...) -> Adapter` factory instead.
+
+v1 adapters: `http_json`, `rss`, `web_diff`, `imap_search`, `ics_calendar`, `weather_openmeteo`, `transit_bvg`, `parcel_dhl`, `flight_status`. `imap_search` is not yet built — IMAP isn't an HTTP GET call, and `Endpoint.method: Literal["GET"]` mirrors `PermissionLine.method`, so adding it needs a new method/protocol literal plus an ADR (AGENTS.md invariant #2: "GET-only unless an ADR says otherwise").
 
 ## 2. Reassurance (Layer 2)
 

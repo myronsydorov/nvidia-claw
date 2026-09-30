@@ -27,4 +27,4 @@ Custody holds the most private data a person has: their worries, their family's 
 | A11 | **Harm to anxious users** (reassurance-seeking) | No on-demand "check again"; silence by default; closing a worry and recording the outcome build calibration; copy says "peace of mind, not therapy" | AGENTS #9 |
 
 ## Out of scope this week
-Multi-tenant hosting, formal audits, supply-chain signing of watcher bundles (L3 uses content hashes only).
+Multi-tenant hosting, formal audits, supply-chain signing of watcher bundles (L3 uses content hashes only). DNS-rebinding SSRF (a worry-supplied hostname that only resolves to a private/metadata IP at request time, not at declare time, so T-08's `Endpoint`/`parse_https_url` checks can't see it) — real enforcement belongs to OpenShell's runtime egress policy or DNS pinning in the watcher's HTTP client, a T-04 concern once the real `openshell` CLI semantics are pinned (ADR-0001).

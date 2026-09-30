@@ -1,0 +1,15 @@
+{
+	"shipments": [
+		{
+			"id": "00340434161094123456",
+			"status": {
+				"timestamp": "2026-10-01T11:05:00+02:00",
+				"statusCode": "delivered",
+				"status": "Delivered",
+				"description": "The shipment has been delivered"
+			},
+			"estimatedTimeOfDelivery": null,
+			"events": []
+		}
+	]
+}

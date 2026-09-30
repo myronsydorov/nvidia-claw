@@ -1,0 +1,15 @@
+{
+	"shipments": [
+		{
+			"id": "00340434161094123456",
+			"status": {
+				"timestamp": "2026-09-29T14:32:00+02:00",
+				"statusCode": "transit",
+				"status": "Transit",
+				"description": "The shipment has departed from a DHL facility"
+			},
+			"estimatedTimeOfDelivery": "2026-10-01T18:00:00+02:00",
+			"events": []
+		}
+	]
+}

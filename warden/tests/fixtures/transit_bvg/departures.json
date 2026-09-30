@@ -1,0 +1,25 @@
+{
+	"departures": [
+		{
+			"tripId": "1|2|3|4|20260930",
+			"line": { "name": "U2", "product": "subway" },
+			"direction": "Pankow",
+			"when": "2026-09-30T10:15:00+02:00",
+			"plannedWhen": "2026-09-30T10:14:00+02:00",
+			"delay": 60,
+			"platform": "2",
+			"cancelled": false
+		},
+		{
+			"tripId": "5|6|7|8|20260930",
+			"line": { "name": "M5", "product": "tram" },
+			"direction": "Hackescher Markt",
+			"when": null,
+			"plannedWhen": "2026-09-30T10:18:00+02:00",
+			"delay": null,
+			"platform": "1",
+			"cancelled": true
+		}
+	],
+	"realtimeDataUpdatedAt": 1790000000
+}

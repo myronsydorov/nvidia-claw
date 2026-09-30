@@ -1,0 +1,8 @@
+# provisional policy schema — real OpenShell CLI syntax pinned by T-04 (ADR-0001)
+sandbox: cw-parcel-dhl1
+egress:
+- host: api-eu.dhl.com
+  port: 443
+  method: GET
+  path: /track/shipments
+  why: check parcel status
