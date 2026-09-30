@@ -26,3 +26,8 @@ dist/
 # misc
 .DS_Store
 *.log
+
+# Playwright
+app/test-results/
+app/playwright-report/
+app/e2e/results/

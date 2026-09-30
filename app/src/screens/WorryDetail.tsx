@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { WorryDetail as Detail } from "../api/schemas";
 import { PermissionCard } from "../components/PermissionCard";
@@ -6,10 +6,11 @@ import { BackLink, Button, Screen, SectionLabel } from "../components/ui";
 import { adapterLabel, statusLabel } from "../lib/labels";
 import { navigate } from "../lib/router";
 import { ago, day, every } from "../lib/time";
-import { useAsync } from "../lib/useAsync";
+import { useAsync, useLiveEvents } from "../lib/useAsync";
 
 function Body({ initial }: { initial: Detail }) {
 	const [detail, setDetail] = useState(initial);
+	useEffect(() => setDetail(initial), [initial]);
 	const [busy, setBusy] = useState(false);
 	const { worry, watcher, timeline } = detail;
 	const last = watcher?.last_result ?? null;
@@ -130,6 +131,9 @@ function Body({ initial }: { initial: Detail }) {
 
 export function WorryDetail({ id }: { id: string }) {
 	const d = useAsync(() => api.getWorry(id), id);
+	useLiveEvents(api.subscribe, (e) => {
+		if (e.type === "connected" || e.data.worry_id === id) d.reload();
+	});
 	return (
 		<Screen>
 			<BackLink href="#/" label="Back" />

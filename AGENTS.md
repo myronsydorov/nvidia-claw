@@ -27,11 +27,12 @@ scripts/          setup, restart.sh, spikes
 ## Commands
 Keep this list in sync with the Makefile.
 - `make setup`: install everything (uv for Python, pnpm for the app)
-- `make dev`: run Warden + app locally with mock sandboxes (`CUSTODY_SANDBOX=mock`)
+- `make dev`: run Warden + app locally with mock sandboxes and the mock compiler stage (`CUSTODY_SANDBOX=mock CUSTODY_COMPILER=mock`); open the app and paste `WARDEN_DEVICE_TOKEN`
 - `make lint` · `make typecheck` · `make test`: must pass before any commit
+- `make e2e`: Playwright smoke test (hand over → approve → watching) against a real local Warden
 - `make spike`: OpenShell sandbox create → policy → exec → delete (needs a NemoClaw host)
 - Python only: `uv run pytest -q`, `uv run ruff check --fix`, `uv run mypy warden`
-- App only: `pnpm -C app dev|build|test|lint|typecheck`
+- App only: `pnpm -C app dev|dev:mock|build|test|e2e|lint|typecheck` (`dev:mock` = in-memory mock API, no Warden)
 
 ## Non-negotiable invariants
 1. Watchers run **only** inside their own OpenShell sandbox. Never on the host, never two watchers in one sandbox.

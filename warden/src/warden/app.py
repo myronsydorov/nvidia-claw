@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -14,8 +16,14 @@ from warden.sandbox.factory import get_sandbox_driver
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.events = EventBus()
     app.state.driver = get_sandbox_driver()
+    app.state.background_tasks = set()
     async with db.lifespan(app):
         yield
+        tasks: set[asyncio.Task[None]] = app.state.background_tasks
+        for task in list(tasks):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 app = FastAPI(
