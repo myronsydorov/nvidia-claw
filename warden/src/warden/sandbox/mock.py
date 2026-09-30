@@ -1,6 +1,8 @@
 """In-memory SandboxDriver used when CUSTODY_SANDBOX=mock. No openshell calls."""
 
+import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from warden.sandbox.driver import ExecResult, SandboxHandle
 
@@ -28,7 +30,15 @@ class MockDriver:
     async def exec(self, name: str, command: list[str]) -> ExecResult:
         if name not in self._sandboxes:
             raise KeyError(f"no such sandbox {name!r}")
-        return ExecResult(stdout="", stderr="", exit_code=0)
+        # A canned `ok` WatchResult so `make dev` shows a quietly watching worry.
+        result = {
+            "status": "ok",
+            "summary": "All quiet (mock sandbox).",
+            "evidence": {"source": "mock", "checked_at": datetime.now(UTC).isoformat(), "data": {}},
+            "fear_came_true": None,
+            "next_check_s": 3600,
+        }
+        return ExecResult(stdout=json.dumps(result), stderr="", exit_code=0)
 
     async def delete(self, name: str) -> None:
         del self._sandboxes[name]

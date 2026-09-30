@@ -8,5 +8,5 @@ router = APIRouter()
 
 @router.get("/api/health")
 async def health(request: Request) -> HealthResponse:
-    sandboxes_live = await get_store(request).watchers.count(state="active")
+    sandboxes_live = await get_store(request).sandboxes_live()
     return HealthResponse(status="ok", sandboxes_live=sandboxes_live)

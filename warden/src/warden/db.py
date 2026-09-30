@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from collections.abc import AsyncIterator
@@ -32,6 +33,10 @@ CREATE TABLE IF NOT EXISTS sharing_rules (
 CREATE TABLE IF NOT EXISTS questions_log (
     id TEXT PRIMARY KEY,
     asked_at TEXT NOT NULL,
+    data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS schedule (
+    watcher_id TEXT PRIMARY KEY,
     data TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -115,6 +120,15 @@ class Store:
         self.sharing_rules = JsonStore(conn, "sharing_rules", "peer_id")
         self.questions_log = JsonStore(conn, "questions_log", "id", ("asked_at",))
         self.push_subscriptions = JsonStore(conn, "push_subscriptions", "endpoint")
+        # Scheduler-internal (T-10), not a contract: {next_run_at, consecutive_errors}.
+        self.schedule = JsonStore(conn, "schedule", "watcher_id")
+        # Held around every read-modify-write of a worry/watcher pair, by the routes and the
+        # scheduler alike, so a let-go can't interleave with a scheduler run (and vice versa).
+        self.write_lock = asyncio.Lock()
+
+    async def sandboxes_live(self) -> int:
+        # A paused watcher keeps its sandbox (T-10), so it still counts as live.
+        return await self.watchers.count(state="active") + await self.watchers.count(state="paused")
 
 
 @asynccontextmanager
