@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI
 
 from warden import db
 from warden.auth import require_device_token
+from warden.compiler import mock as mock_compiler
 from warden.events import EventBus
 from warden.routers import events, health, ledger, people, push, sharing_rules, worries
 from warden.sandbox.factory import get_sandbox_driver
@@ -17,6 +18,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.events = EventBus()
     app.state.driver = get_sandbox_driver()
     app.state.background_tasks = set()
+    app.state.worry_lock = asyncio.Lock()
+    mock_compiler.enabled()  # fail fast on CUSTODY_COMPILER=mock without mock sandboxes
     async with db.lifespan(app):
         yield
         tasks: set[asyncio.Task[None]] = app.state.background_tasks

@@ -51,6 +51,8 @@ export type EventStreamOptions = {
 export const defaultBackoff = (attempt: number) =>
 	Math.min(30_000, 1000 * 2 ** attempt) * (0.5 + Math.random() / 2);
 
+const STABLE_MS = 10_000;
+
 export type EventStream = {
 	subscribe(listener: Listener): () => void;
 };
@@ -71,6 +73,7 @@ export function createEventStream(opts: EventStreamOptions): EventStream {
 		while (!ctl.signal.aborted) {
 			const token = opts.getToken();
 			if (!token) break;
+			let openedAt: number | null = null;
 			try {
 				const res = await doFetch(opts.url, {
 					headers: {
@@ -84,7 +87,7 @@ export function createEventStream(opts: EventStreamOptions): EventStream {
 					break;
 				}
 				if (!res.ok || !res.body) throw new Error(`events: ${res.status}`);
-				attempt = 0;
+				openedAt = Date.now();
 				emit({ type: "connected" });
 				const reader = res.body
 					.pipeThrough(new TextDecoderStream())
@@ -101,6 +104,9 @@ export function createEventStream(opts: EventStreamOptions): EventStream {
 				if (ctl.signal.aborted) break;
 			}
 			if (ctl.signal.aborted) break;
+			// Only a stream that stayed up a while resets the backoff, so a
+			// server that accepts and drops at once can't cause a tight loop.
+			if (openedAt !== null && Date.now() - openedAt >= STABLE_MS) attempt = 0;
 			await new Promise((r) => setTimeout(r, backoff(attempt)));
 			attempt += 1;
 		}

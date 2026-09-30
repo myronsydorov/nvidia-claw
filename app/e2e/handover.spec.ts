@@ -51,4 +51,8 @@ test("hand over → approve → watching, against a real Warden", async ({
 	const detail = await res.json();
 	expect(detail.worry.status).toBe("watching");
 	expect(detail.watcher.state).toBe("active");
+
+	// Let it go: back home, nothing in custody.
+	await page.getByRole("button", { name: "Let it go" }).click();
+	await expect(page.getByText("Nothing in custody.")).toBeVisible();
 });

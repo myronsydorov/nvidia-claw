@@ -95,7 +95,9 @@ async def create_worry(body: WorryCreateRequest, request: Request) -> Worry:
     if mock_compiler.enabled():
         # Stand-in until T-09's compiler; the set keeps the task referenced.
         tasks: set[asyncio.Task[None]] = request.app.state.background_tasks
-        task = asyncio.create_task(mock_compiler.mock_compile(store, events, worry.id))
+        task = asyncio.create_task(
+            mock_compiler.mock_compile(store, events, request.app.state.worry_lock, worry.id)
+        )
         tasks.add(task)
         task.add_done_callback(tasks.discard)
     return worry
@@ -178,6 +180,12 @@ async def deny_worry(worry_id: str, request: Request) -> WorryDetail:
 
 @router.post("/api/worries/{worry_id}/let-go")
 async def let_go_worry(worry_id: str, request: Request) -> WorryDetail:
+    lock: asyncio.Lock = request.app.state.worry_lock
+    async with lock:  # never interleave with a compile step writing this worry
+        return await _let_go(worry_id, request)
+
+
+async def _let_go(worry_id: str, request: Request) -> WorryDetail:
     store = get_store(request)
     row = await _row(store, worry_id)
     worry = Worry.model_validate(row["worry"])

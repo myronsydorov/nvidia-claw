@@ -62,14 +62,13 @@ export function createMockApi(latencyMs = 250): Api {
 	return {
 		async listWorries() {
 			await wait(latencyMs);
-			return [...store.values()]
-				.filter((d) => d.worry.status !== "resolved")
-				.map((d) =>
-					worrySummarySchema.parse({
-						worry: d.worry,
-						last_result: d.watcher?.last_result ?? null,
-					}),
-				);
+			// Like the Warden: every worry, resolved ones included.
+			return [...store.values()].map((d) =>
+				worrySummarySchema.parse({
+					worry: d.worry,
+					last_result: d.watcher?.last_result ?? null,
+				}),
+			);
 		},
 		async getWorry(id) {
 			await wait(latencyMs);

@@ -99,6 +99,24 @@ describe("createEventStream", () => {
 		expect(unauthorized).toBe(1);
 	});
 
+	it("keeps backing off when the stream drops straight after connecting", async () => {
+		const attempts: number[] = [];
+		const stream = createEventStream({
+			url: "/api/events",
+			getToken: () => "tok",
+			onUnauthorized: () => {},
+			fetchImpl: async () => sseResponse([]),
+			backoffMs: (n) => {
+				attempts.push(n);
+				return 0;
+			},
+		});
+		const off = stream.subscribe(() => {});
+		await tick();
+		off();
+		expect(attempts.slice(0, 3)).toEqual([0, 1, 2]);
+	});
+
 	it("backs off and retries after a network error", async () => {
 		const attempts: number[] = [];
 		let calls = 0;

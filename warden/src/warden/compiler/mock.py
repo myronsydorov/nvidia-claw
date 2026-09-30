@@ -20,7 +20,13 @@ from warden.models import PermissionLine, TimelineEvent, Watcher, Worry, WorrySt
 
 
 def enabled() -> bool:
-    return os.environ.get("CUSTODY_COMPILER") == "mock"
+    """Only ever alongside mock sandboxes: its policies are hand-written templates,
+    not generated from adapter declarations (AGENTS invariant 2)."""
+    if os.environ.get("CUSTODY_COMPILER") != "mock":
+        return False
+    if os.environ.get("CUSTODY_SANDBOX") != "mock":
+        raise RuntimeError("CUSTODY_COMPILER=mock requires CUSTODY_SANDBOX=mock")
+    return True
 
 
 def _step_s() -> float:
@@ -124,7 +130,9 @@ async def _save(store: Store, worry: Worry, timeline: list[TimelineEvent]) -> No
     await store.worries.put(worry.id, row, status=worry.status)
 
 
-async def mock_compile(store: Store, events: EventBus, worry_id: str) -> None:
+async def mock_compile(
+    store: Store, events: EventBus, worry_lock: asyncio.Lock, worry_id: str
+) -> None:
     template = None
     steps: tuple[tuple[WorryStatus, WorryStatus], ...] = (
         ("triaging", "compiling"),
@@ -132,46 +140,54 @@ async def mock_compile(store: Store, events: EventBus, worry_id: str) -> None:
     )
     for expected, step in steps:
         await asyncio.sleep(_step_s())
-        loaded = await _load(store, worry_id)
-        # The user may have let it go meanwhile; never resurrect it.
-        if loaded is None or loaded[0].status != expected:
-            return
-        worry, timeline = loaded
-        now = datetime.now(UTC)
+        async with worry_lock:  # shared with let-go: check-then-save is atomic
+            loaded = await _load(store, worry_id)
+            # The user may have let it go meanwhile; never resurrect it.
+            if loaded is None or loaded[0].status != expected:
+                return
+            worry, timeline = loaded
+            now = datetime.now(UTC)
 
-        if step == "compiling":
-            template = pick_template(worry.text)
-            worry.type = template.type
-            worry.fear = template.fear
-            timeline.append(TimelineEvent(at=now, kind="triaged", text="Understood what to watch."))
-        else:
-            assert template is not None
-            watcher_id = new_watcher_id()
-            sandbox_name = f"cw-{watcher_id[-8:].lower()}"
-            watcher = Watcher(
-                id=watcher_id,
-                worry_id=worry.id,
-                adapters=[template.adapter],
-                code="# mock compiler: no watcher code until T-09\n",
-                policy_yaml=policy_yaml(sandbox_name, template.line),
-                policy_summary=[template.line],
-                sandbox_name=sandbox_name,
-                interval_s=template.interval_s,
-                state="awaiting_approval",
-                last_result=None,
-            )
-            await store.watchers.put(
-                watcher.id, watcher.model_dump(mode="json"), worry_id=worry.id, state=watcher.state
-            )
-            worry.watcher_id = watcher.id
-            timeline.append(TimelineEvent(at=now, kind="compiled", text="Wrote a watcher."))
-            timeline.append(
-                TimelineEvent(at=now, kind="approval_requested", text="Asked for your permission.")
-            )
+            if step == "compiling":
+                template = pick_template(worry.text)
+                worry.type = template.type
+                worry.fear = template.fear
+                timeline.append(
+                    TimelineEvent(at=now, kind="triaged", text="Understood what to watch.")
+                )
+            else:
+                assert template is not None
+                watcher_id = new_watcher_id()
+                sandbox_name = f"cw-{watcher_id[-8:].lower()}"
+                watcher = Watcher(
+                    id=watcher_id,
+                    worry_id=worry.id,
+                    adapters=[template.adapter],
+                    code="# mock compiler: no watcher code until T-09\n",
+                    policy_yaml=policy_yaml(sandbox_name, template.line),
+                    policy_summary=[template.line],
+                    sandbox_name=sandbox_name,
+                    interval_s=template.interval_s,
+                    state="awaiting_approval",
+                    last_result=None,
+                )
+                await store.watchers.put(
+                    watcher.id,
+                    watcher.model_dump(mode="json"),
+                    worry_id=worry.id,
+                    state=watcher.state,
+                )
+                worry.watcher_id = watcher.id
+                timeline.append(TimelineEvent(at=now, kind="compiled", text="Wrote a watcher."))
+                timeline.append(
+                    TimelineEvent(
+                        at=now, kind="approval_requested", text="Asked for your permission."
+                    )
+                )
 
-        worry.status = step
-        worry.updated_at = now
-        await _save(store, worry, timeline)
+            worry.status = step
+            worry.updated_at = now
+            await _save(store, worry, timeline)
         await events.publish("worry.updated", {"worry_id": worry.id})
 
     await events.publish("approval.needed", {"worry_id": worry_id})

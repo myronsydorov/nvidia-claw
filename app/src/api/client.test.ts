@@ -28,7 +28,10 @@ describe("mock api", () => {
 
 		const gone = await api.letGo(handed.worry.id);
 		expect(gone.worry.status).toBe("resolved");
-		expect((await api.listWorries()).length).toBe(before.length);
+		const after = await api.listWorries();
+		expect(
+			after.find((s) => s.worry.id === handed.worry.id)?.worry.status,
+		).toBe("resolved");
 	});
 
 	it("deny parks the worry", async () => {
