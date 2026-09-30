@@ -90,6 +90,7 @@ async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--record", action="store_true")
     parser.add_argument("--only", help="run one case id")
+    parser.add_argument("--verbose", action="store_true", help="print every model call")
     args = parser.parse_args()
 
     if os.environ.get("CUSTODY_SANDBOX") != "mock":
@@ -102,13 +103,15 @@ async def main() -> int:
     cases: list[dict[str, Any]] = yaml.safe_load(CASES.read_text())
     if args.only:
         cases = [c for c in cases if c["id"] == args.only]
-    client = NvidiaClient.from_env()
     score = 0
     print(
         f"{'case':<16} {'want':<7} {'got':<7} {'status':<18} {'try':>3} {'adapters':<22} {'s':>5}"
     )
     with tempfile.TemporaryDirectory() as tmp:
         for i, case in enumerate(cases):
+            # Cases run one at a time (no concurrency) so rate limits can't cascade; a fresh
+            # client per case keeps its call diagnostics separate.
+            client = NvidiaClient.from_env()
             recorder = Recorder(client)
             started = time.monotonic()
             outcome, worry = await run_case(case, recorder, f"{tmp}/eval-{i}.db")
@@ -123,7 +126,12 @@ async def main() -> int:
                 f"{time.monotonic() - started:>5.0f}  {'PASS' if ok else 'FAIL'}"
             )
             for problem in outcome.problems:
-                print(f"{'':<16} problem: {problem[:150]}")
+                print(f"{'':<16} problem: {problem[:300]}")
+            if not ok or args.verbose:
+                for call in client.calls:  # status, outcome, finish_reason, latency; never the key
+                    print(f"{'':<16} call: {call.line()}")
+            elif any(c.stage == "triage_fallback" for c in client.calls):
+                print(f"{'':<16} note: triage needed the fallback model")
             if args.record:
                 RECORD_DIR.mkdir(parents=True, exist_ok=True)
                 (RECORD_DIR / f"{case['id']}.json").write_text(

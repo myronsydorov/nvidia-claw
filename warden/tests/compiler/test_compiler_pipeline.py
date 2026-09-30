@@ -60,7 +60,7 @@ class ScriptedLLM:
         self.calls.append((stage, list(messages)))
         if stage == "codegen" and self.before_codegen is not None:
             await self.before_codegen()  # type: ignore[misc]
-        if not self.answers[stage]:
+        if not self.answers.setdefault(stage, []):
             raise LLMError(f"{stage}: model endpoint unavailable after retries (HTTP 503)")
         return self.answers[stage].pop(0)
 

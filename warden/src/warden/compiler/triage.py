@@ -1,6 +1,7 @@
 """Triage: worry text → type, the precise fear, a deadline and a route (DESIGN §4 steps 2–3)."""
 
 import json
+import logging
 import re
 from datetime import datetime
 from typing import Literal
@@ -8,7 +9,9 @@ from typing import Literal
 from pydantic import AwareDatetime, BaseModel, Field, ValidationError
 
 from warden.compiler.guard import GUARD_RULE, untrusted
-from warden.compiler.llm import LLMClient, LLMError, Message
+from warden.compiler.llm import CallDiag, LLMClient, LLMError, Message, Stage
+
+log = logging.getLogger(__name__)
 
 Route = Literal["watch", "person", "park"]
 TriageType = Literal["checkable", "deadline", "person", "social", "uncontrollable"]
@@ -45,7 +48,11 @@ signal: which observable signal would settle it (e.g. "DHL tracking status"), or
 
 {GUARD_RULE}"""
 
-_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+_THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.DOTALL | re.IGNORECASE)
+_RETRY_NUDGE = (
+    "That was not one valid JSON object with the fields asked. Answer again with ONLY the "
+    "JSON object: no reasoning, no prose, no code fence."
+)
 
 
 class TriageError(Exception):
@@ -53,14 +60,34 @@ class TriageError(Exception):
 
 
 def parse_triage(content: str) -> Triage:
-    match = _JSON_RE.search(content)
-    if match is None:
-        raise TriageError("no JSON object in the answer")
-    try:
-        data = json.loads(match.group(0))
-        return Triage.model_validate(data)
-    except (ValueError, ValidationError) as exc:
-        raise TriageError(f"invalid triage JSON: {type(exc).__name__}") from exc
+    """The LAST JSON object in the answer that is a valid Triage.
+
+    Reasoning models sometimes put their thinking in `content` ("Here's a thinking
+    process: ..."), quoting the schema or drafting answers before the final one. The
+    last valid object is the answer; `<think>` blocks are dropped first.
+    """
+    text = _THINK_RE.sub("", content)
+    decoder = json.JSONDecoder()
+    found_json = False
+    last_error = ""
+    best: Triage | None = None
+    for start in (i for i, ch in enumerate(text) if ch == "{"):
+        try:
+            data, _ = decoder.raw_decode(text, start)
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        found_json = True
+        try:
+            best = Triage.model_validate(data)
+        except ValidationError as exc:
+            last_error = ", ".join(str(e["loc"][0]) for e in exc.errors() if e["loc"])[:120]
+    if best is not None:
+        return best
+    if not found_json:
+        raise TriageError(f"no JSON object in the answer ({len(content)} chars)")
+    raise TriageError(f"no valid triage object (bad fields: {last_error or '?'})")
 
 
 def _messages(text: str, now: datetime) -> list[Message]:
@@ -74,22 +101,36 @@ def _messages(text: str, now: datetime) -> list[Message]:
     ]
 
 
-async def triage(llm: LLMClient, text: str, now: datetime) -> Triage:
-    """One re-ask on an unparseable answer, then give up (the caller parks honestly)."""
-    messages = _messages(text, now)
-    content = await llm.complete("triage", messages)
-    try:
-        return _consistent(parse_triage(content))
-    except TriageError:
-        messages += [
-            Message("assistant", content[:4000]),
-            Message("user", "That was not one valid JSON object with the fields asked. Try again."),
-        ]
-        content = await llm.complete("triage", messages)
+async def _ask(
+    llm: LLMClient, stage: Stage, messages: list[Message], reasons: list[str], calls: list[CallDiag]
+) -> Triage | None:
+    """One stage: an answer, and one re-ask if it doesn't parse. None if both fail."""
+    for msgs in (messages, [*messages, Message("user", _RETRY_NUDGE)]):
+        try:
+            content = await llm.complete(stage, msgs)
+        except LLMError as exc:
+            reasons.append(str(exc))
+            calls.extend(exc.calls)
+            return None  # the client already retried; don't re-ask a failing endpoint
         try:
             return _consistent(parse_triage(content))
         except TriageError as exc:
-            raise LLMError("triage gave no usable answer") from exc
+            reasons.append(f"{stage}: {exc}")
+    return None
+
+
+async def triage(llm: LLMClient, text: str, now: datetime) -> Triage:
+    """Fast model (answer + one re-ask), then once more with the code model, then give up."""
+    messages = _messages(text, now)
+    reasons: list[str] = []
+    calls: list[CallDiag] = []
+    for stage in ("triage", "triage_fallback"):
+        result = await _ask(llm, stage, messages, reasons, calls)
+        if result is not None:
+            if stage == "triage_fallback":
+                log.info("triage answered by the fallback model", extra={"reasons": reasons})
+            return result
+    raise LLMError("triage gave no usable answer: " + " | ".join(reasons), calls)
 
 
 _ROUTE_FOR_TYPE: dict[str, Route] = {

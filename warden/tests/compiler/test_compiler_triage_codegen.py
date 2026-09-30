@@ -17,13 +17,22 @@ NOW = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 
 
 class Scripted:
-    def __init__(self, *answers: str) -> None:
+    """Answers in order; an LLMError item is raised instead of returned."""
+
+    def __init__(self, *answers: str | LLMError) -> None:
         self.answers = list(answers)
         self.calls: list[tuple[Stage, list[Message]]] = []
 
     async def complete(self, stage: Stage, messages: list[Message]) -> str:
         self.calls.append((stage, list(messages)))
-        return self.answers.pop(0)
+        answer = self.answers.pop(0)
+        if isinstance(answer, LLMError):
+            raise answer
+        return answer
+
+    @property
+    def stages(self) -> list[str]:
+        return [stage for stage, _ in self.calls]
 
 
 def test_parse_triage_from_recorded_answers() -> None:
@@ -53,12 +62,71 @@ async def test_triage_corrects_a_route_that_contradicts_the_type() -> None:
     assert (await triage(Scripted(answer), "x", NOW)).route == "park"
 
 
-async def test_triage_re_asks_once_then_gives_up() -> None:
-    llm = Scripted("garbage", REPLAY[0]["triage"])
+async def test_triage_re_asks_once_without_echoing_the_bad_answer() -> None:
+    llm = Scripted("garbage reasoning", REPLAY[0]["triage"])
     assert (await triage(llm, "my parcel", NOW)).route == "watch"
-    assert len(llm.calls) == 2
-    with pytest.raises(LLMError):
-        await triage(Scripted("garbage", "still garbage"), "x", NOW)
+    assert llm.stages == ["triage", "triage"]
+    re_ask = llm.calls[1][1]
+    assert "garbage reasoning" not in str(re_ask)
+    assert "ONLY the JSON object" in re_ask[-1].content
+
+
+async def test_triage_falls_back_to_the_code_model() -> None:
+    down = LLMError("triage: no usable answer after 4 attempts (timeout)")
+    llm = Scripted(down, REPLAY[3]["triage"])
+    result = await triage(llm, "Is my mum OK?", NOW)
+    assert result.route == "person"
+    assert llm.stages == ["triage", "triage_fallback"]
+
+
+async def test_triage_falls_back_after_two_unparseable_answers() -> None:
+    llm = Scripted("nope", "still nope", REPLAY[0]["triage"])
+    assert (await triage(llm, "my parcel", NOW)).route == "watch"
+    assert llm.stages == ["triage", "triage", "triage_fallback"]
+
+
+async def test_triage_gives_up_with_every_reason() -> None:
+    llm = Scripted("nope", "{}", LLMError("triage_fallback: model endpoint refused (HTTP 404)"))
+    with pytest.raises(LLMError) as info:
+        await triage(llm, "x", NOW)
+    message = str(info.value)
+    assert "no JSON object in the answer" in message
+    assert "no valid triage object" in message
+    assert "HTTP 404" in message
+    assert llm.stages == ["triage", "triage", "triage_fallback"]
+
+
+LIVE = json.loads(
+    (Path(__file__).parent.parent / "fixtures" / "llm" / "live_triage_reasoning.json").read_text()
+)
+
+
+def test_live_truncated_reasoning_has_no_answer() -> None:
+    with pytest.raises(TriageError, match="no JSON object"):
+        parse_triage(LIVE["truncated_no_json"])
+
+
+def test_the_last_valid_object_wins_over_quoted_schema_and_drafts() -> None:
+    content = (
+        "Here's a thinking process:\n"
+        'The format is {"type": "...", "fear": "...", "deadline": "...", "route": "..."}.\n'
+        'Draft: {"type": "checkable", "fear": "draft", "deadline": null, "route": "watch"}\n'
+        "Wait, it has a time. Final:\n"
+        '{"type": "deadline", "fear": "final", "deadline": "2026-10-02T16:00:00Z", '
+        '"route": "watch", "signal": "DHL"}'
+    )
+    assert parse_triage(content).fear == "final"
+
+
+def test_think_blocks_are_ignored() -> None:
+    content = (
+        '<think>maybe {"type": "social", "fear": "x", "deadline": null, "route": "park"}</think>\n'
+        + REPLAY[1]["triage"]
+    )
+    assert parse_triage(content).type == "checkable"
+    unclosed = '<think>cut off {"type": "social", "fear": "x", "deadline": null, "route": "park"}'
+    with pytest.raises(TriageError):
+        parse_triage(unclosed)
 
 
 async def test_triage_prompt_wraps_the_worry_text_as_untrusted() -> None:

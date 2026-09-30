@@ -33,7 +33,7 @@ MAX_ATTEMPTS = 3  # the first try + 2 retries with the error fed back
 PARK_PERSON = "About a person: I'll offer a private check-in once reassurance is set up."
 PARK_WORRY_TIME = "Not something a watcher can settle, so I saved it for your weekly worry time."
 PARK_FAILED = "I couldn't build a watcher that works, so I've parked this rather than pretend."
-PARK_NO_MODEL = "I couldn't reach the model to set this up, so I've parked it for now."
+PARK_NO_MODEL = "I couldn't get a usable answer from the model to set this up, so I've parked it."
 PARK_BROKEN = "Something went wrong while setting this up, so I've parked it for now."
 
 
@@ -88,8 +88,14 @@ class Compiler:
         try:
             await self._compile(worry_id, outcome)
         except LLMError as exc:
+            # str(exc) and the call diagnostics are ours: statuses, finish reasons, sizes.
             log.warning(
-                "compiler: model unavailable", extra={"worry_id": worry_id, "error": str(exc)}
+                "compiler: no usable model answer",
+                extra={
+                    "worry_id": worry_id,
+                    "error": str(exc),
+                    "calls": [c.line() for c in exc.calls],
+                },
             )
             outcome.problems.append(str(exc))
             await self._park(worry_id, ("triaging", "compiling"), PARK_NO_MODEL, outcome)
