@@ -54,6 +54,9 @@ class FakeDriver:
     async def apply_policy(self, name: str, policy_yaml: str) -> None:
         return None
 
+    async def write_file(self, name: str, path: str, content: str) -> None:
+        return None
+
     async def exec(self, name: str, command: list[str]) -> ExecResult:
         self.execs.append(name)
         step = self.script.pop(0)

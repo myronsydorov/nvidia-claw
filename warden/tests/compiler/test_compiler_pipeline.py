@@ -1,0 +1,287 @@
+"""The compiler end to end: scripted model answers, a scripted sandbox, a real store."""
+
+import json
+from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
+from pathlib import Path
+
+import aiosqlite
+import pytest
+from warden.compiler.llm import LLMError, Message, Stage
+from warden.compiler.pipeline import (
+    MAX_ATTEMPTS,
+    PARK_FAILED,
+    PARK_NO_MODEL,
+    PARK_PERSON,
+    PARK_WORRY_TIME,
+    Compiler,
+)
+from warden.db import SCHEMA, Store
+from warden.events import EventBus
+from warden.models import TimelineEvent, Watcher, Worry
+from warden.sandbox.driver import ExecResult, SandboxHandle
+from warden.worry_rows import parse_row, save_worry
+
+REPLAY = json.loads(
+    (Path(__file__).parent.parent / "fixtures" / "llm" / "replay.json").read_text()
+)["cases"]
+PARCEL, TRAIN, WEATHER, PERSON, SOCIAL = REPLAY
+WORRY_ID = "w_01K6B8Z3Q4R5S6T7V8W9XA0001"
+NOW = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
+WATCHED_SECRET = "PRIVATE-INBOX-CONTENT"
+
+
+def ok_run() -> ExecResult:
+    body = {
+        "status": "ok",
+        "summary": "Parcel is on its way.",
+        "evidence": {"source": "DHL", "checked_at": NOW.isoformat(), "data": {"x": 1}},
+        "fear_came_true": None,
+        "next_check_s": 3600,
+    }
+    return ExecResult(stdout=json.dumps(body), stderr="", exit_code=0)
+
+
+def crash_run() -> ExecResult:
+    return ExecResult(
+        stdout=json.dumps({"evidence": WATCHED_SECRET}),
+        stderr="  File \"/w/run.py\", line 9, in <module>\nKeyError: 'daily'\n",
+        exit_code=1,
+    )
+
+
+class ScriptedLLM:
+    def __init__(self, triage: list[str], codegen: list[str]) -> None:
+        self.answers: dict[Stage, list[str]] = {"triage": triage, "codegen": codegen}
+        self.calls: list[tuple[Stage, list[Message]]] = []
+        self.before_codegen: Callable[[], object] | None = None
+
+    async def complete(self, stage: Stage, messages: list[Message]) -> str:
+        self.calls.append((stage, list(messages)))
+        if stage == "codegen" and self.before_codegen is not None:
+            await self.before_codegen()  # type: ignore[misc]
+        if not self.answers[stage]:
+            raise LLMError(f"{stage}: model endpoint unavailable after retries (HTTP 503)")
+        return self.answers[stage].pop(0)
+
+
+class ScriptedDriver:
+    def __init__(self, *runs: ExecResult) -> None:
+        self.runs = list(runs)
+        self.live: set[str] = set()
+        self.created: list[str] = []
+        self.policies: dict[str, str] = {}
+        self.files: dict[str, dict[str, str]] = {}
+
+    async def create(self, name: str, image: str) -> SandboxHandle:
+        self.live.add(name)
+        self.created.append(name)
+        return SandboxHandle(name=name, status="ready")
+
+    async def apply_policy(self, name: str, policy_yaml: str) -> None:
+        self.policies[name] = policy_yaml
+
+    async def write_file(self, name: str, path: str, content: str) -> None:
+        self.files.setdefault(name, {})[path] = content
+
+    async def exec(self, name: str, command: list[str]) -> ExecResult:
+        assert command == ["python3", "/w/run.py"]
+        assert "/w/run.py" in self.files[name]
+        return self.runs.pop(0)
+
+    async def delete(self, name: str) -> None:
+        self.live.remove(name)
+
+
+@pytest.fixture
+async def store(warden_test_environment: str) -> AsyncIterator[Store]:
+    async with aiosqlite.connect(warden_test_environment) as conn:
+        await conn.executescript(SCHEMA)
+        s = Store(conn)
+        worry = Worry(
+            id=WORRY_ID,
+            text="Will my DHL parcel 00340434161094042557 arrive by Friday 16:00?",
+            type="unclassified",
+            fear="",
+            deadline=None,
+            status="triaging",
+            watcher_id=None,
+            resolution=None,
+            fear_came_true=None,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        await save_worry(s, worry, [TimelineEvent(at=NOW, kind="created", text="x")])
+        yield s
+
+
+async def load(store: Store) -> tuple[Worry, list[str], Watcher | None]:
+    row = await store.worries.get(WORRY_ID)
+    assert row is not None
+    worry, timeline = parse_row(row)
+    watcher = None
+    if worry.watcher_id:
+        watcher = Watcher.model_validate(await store.watchers.get(worry.watcher_id))
+    return worry, [t.kind for t in timeline], watcher
+
+
+def compiler(store: Store, llm: ScriptedLLM, driver: ScriptedDriver) -> tuple[Compiler, EventBus]:
+    bus = EventBus()
+    return Compiler(store, bus, driver, llm, clock=lambda: NOW), bus
+
+
+async def test_happy_path_reaches_awaiting_approval(store: Store) -> None:
+    llm = ScriptedLLM([PARCEL["triage"]], [PARCEL["codegen"]])
+    driver = ScriptedDriver(ok_run())
+    c, bus = compiler(store, llm, driver)
+    events = bus.subscribe()
+
+    outcome = await c.compile_worry(WORRY_ID)
+
+    worry, kinds, watcher = await load(store)
+    assert outcome.status == "awaiting_approval" and outcome.attempts == 1
+    assert worry.status == "awaiting_approval"
+    assert (worry.type, worry.deadline) == ("deadline", datetime(2026, 10, 2, 16, tzinfo=UTC))
+    assert kinds == ["created", "triaged", "compiled", "approval_requested"]
+    assert watcher is not None and watcher.state == "awaiting_approval"
+    assert watcher.adapters == ["parcel_dhl"]
+    assert [p.host for p in watcher.policy_summary] == ["api-eu.dhl.com"]
+    assert watcher.sandbox_name in watcher.policy_yaml
+    assert watcher.code.startswith("from watcher_runtime import harness")
+    # The dry run used its own throwaway sandbox, the same generated policy shape, and cleaned up.
+    (dry,) = driver.created
+    assert dry.startswith("cwd-") and driver.live == set()
+    assert "api-eu.dhl.com" in driver.policies[dry]
+    assert driver.files[dry]["/w/run.py"] == watcher.code
+    types = []
+    while not events.empty():
+        types.append(events.get_nowait().type)
+    assert types == ["worry.updated", "worry.updated", "approval.needed"]
+
+
+async def test_crash_is_fed_back_through_the_guard_and_retry_succeeds(store: Store) -> None:
+    llm = ScriptedLLM([PARCEL["triage"]], [PARCEL["codegen"], PARCEL["codegen"]])
+    driver = ScriptedDriver(crash_run(), ok_run())
+    c, _ = compiler(store, llm, driver)
+
+    outcome = await c.compile_worry(WORRY_ID)
+
+    assert outcome.status == "awaiting_approval" and outcome.attempts == 2
+    retry_prompt = [m for s, m in llm.calls if s == "codegen"][1][-1].content
+    assert "run.py crashed" in retry_prompt
+    assert "Traceback lines in run.py: 9" in retry_prompt
+    assert "Exception type: KeyError" in retry_prompt
+    assert WATCHED_SECRET not in retry_prompt  # stdout is never echoed to the model
+    assert driver.live == set()
+
+
+async def test_gate_rejection_is_fed_back_without_touching_a_sandbox(store: Store) -> None:
+    evil = PARCEL["codegen"].replace(
+        "from watcher_runtime import harness",
+        "import subprocess\nfrom watcher_runtime import harness",
+    )
+    llm = ScriptedLLM([PARCEL["triage"]], [evil, PARCEL["codegen"]])
+    driver = ScriptedDriver(ok_run())
+    c, _ = compiler(store, llm, driver)
+
+    outcome = await c.compile_worry(WORRY_ID)
+
+    assert outcome.status == "awaiting_approval" and outcome.attempts == 2
+    assert len(driver.created) == 1  # the rejected code never reached a sandbox
+    retry_prompt = [m for s, m in llm.calls if s == "codegen"][1][-1].content
+    assert "static checker rejected run.py" in retry_prompt and "subprocess" in retry_prompt
+
+
+async def test_three_failures_park_honestly_and_keep_the_failed_watcher(store: Store) -> None:
+    llm = ScriptedLLM([PARCEL["triage"]], [PARCEL["codegen"]] * MAX_ATTEMPTS)
+    driver = ScriptedDriver(*[crash_run() for _ in range(MAX_ATTEMPTS)])
+    c, _ = compiler(store, llm, driver)
+
+    outcome = await c.compile_worry(WORRY_ID)
+
+    worry, kinds, watcher = await load(store)
+    assert outcome.status == "parked" and outcome.attempts == 3
+    assert (worry.status, worry.resolution) == ("parked", PARK_FAILED)
+    assert kinds[-1] == "parked"
+    assert watcher is not None and watcher.state == "dry_run_failed"
+    assert len(driver.created) == 3 and driver.live == set()
+
+
+async def test_status_error_on_the_dry_run_is_a_failure(store: Store) -> None:
+    error = json.loads(ok_run().stdout) | {"status": "error"}
+    err_run = ExecResult(json.dumps(error), "", 0)
+    llm = ScriptedLLM([PARCEL["triage"]], [PARCEL["codegen"]] * 2)
+    c, _ = compiler(store, llm, ScriptedDriver(err_run, ok_run()))
+    assert (await c.compile_worry(WORRY_ID)).attempts == 2
+
+
+@pytest.mark.parametrize(("case", "reason"), [(PERSON, PARK_PERSON), (SOCIAL, PARK_WORRY_TIME)])
+async def test_person_and_social_worries_are_parked_without_codegen(
+    store: Store, case: dict[str, str], reason: str
+) -> None:
+    llm = ScriptedLLM([case["triage"]], [])
+    driver = ScriptedDriver()
+    c, _ = compiler(store, llm, driver)
+
+    await c.compile_worry(WORRY_ID)
+
+    worry, kinds, watcher = await load(store)
+    assert (worry.status, worry.resolution) == ("parked", reason)
+    assert kinds == ["created", "triaged", "parked"]
+    assert watcher is None and driver.created == []
+    assert [s for s, _ in llm.calls] == ["triage"]
+
+
+async def test_model_outage_parks_with_an_honest_reason(store: Store) -> None:
+    c, _ = compiler(store, ScriptedLLM([], []), ScriptedDriver())
+    await c.compile_worry(WORRY_ID)
+    worry, kinds, _ = await load(store)
+    assert (worry.status, worry.resolution) == ("parked", PARK_NO_MODEL)
+
+
+async def test_let_go_during_compile_is_never_revived(store: Store) -> None:
+    llm = ScriptedLLM([PARCEL["triage"]], [PARCEL["codegen"]])
+    driver = ScriptedDriver(ok_run())
+
+    async def let_go() -> None:
+        async with store.write_lock:
+            row = await store.worries.get(WORRY_ID)
+            assert row is not None
+            worry, timeline = parse_row(row)
+            worry.status = "resolved"
+            await save_worry(store, worry, timeline)
+
+    llm.before_codegen = let_go
+    c, _ = compiler(store, llm, driver)
+    await c.compile_worry(WORRY_ID)
+
+    worry, kinds, watcher = await load(store)
+    assert worry.status == "resolved" and watcher is None
+    assert "approval_requested" not in kinds
+
+
+async def test_not_triaging_is_left_alone(store: Store) -> None:
+    llm = ScriptedLLM([PARCEL["triage"]], [])
+    async with store.write_lock:
+        row = await store.worries.get(WORRY_ID)
+        assert row is not None
+        worry, timeline = parse_row(row)
+        worry.status = "resolved"
+        await save_worry(store, worry, timeline)
+    c, _ = compiler(store, llm, ScriptedDriver())
+    await c.compile_worry(WORRY_ID)
+    assert llm.calls == []
+
+
+async def test_a_worry_stranded_mid_compile_is_picked_up_again(store: Store) -> None:
+    async with store.write_lock:
+        row = await store.worries.get(WORRY_ID)
+        assert row is not None
+        worry, timeline = parse_row(row)
+        worry.status = "compiling"  # a restart cancelled the compile here
+        await save_worry(store, worry, timeline)
+    llm = ScriptedLLM([PARCEL["triage"]], [PARCEL["codegen"]])
+    c, _ = compiler(store, llm, ScriptedDriver(ok_run()))
+
+    assert await c.stranded() == [WORRY_ID]
+    assert (await c.compile_worry(WORRY_ID)).status == "awaiting_approval"

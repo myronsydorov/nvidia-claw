@@ -1,0 +1,38 @@
+# T-09 acceptance: 10 labelled worries, run live by `make eval-compiler`.
+# route: watch | person | park. adapter: the one we'd expect (reported, not required).
+- id: parcel
+  text: "I'm worried my DHL parcel 00340434161094042557 won't arrive before Friday 4pm."
+  route: watch
+  adapter: parcel_dhl
+- id: train
+  text: "Is the S1 from Alexanderplatz (BVG stop 900100003) going to be cancelled tomorrow morning?"
+  route: watch
+  adapter: transit_bvg
+- id: wedding_rain
+  text: "It's going to pour on our garden wedding in Potsdam this Saturday, isn't it?"
+  route: watch
+  adapter: weather_openmeteo
+- id: visa_page
+  text: "I'm scared I'll miss it when the appointment page https://service.berlin.de/dienstleistung/120686/ finally changes."
+  route: watch
+  adapter: web_diff
+- id: python_release
+  text: "Worried a Python security release comes out and I miss it. Their feed: https://blog.python.org/feeds/posts/default?alt=rss"
+  route: watch
+  adapter: rss
+- id: school_calendar
+  text: "What if the school moves Friday's parents' evening and I don't notice? Calendar: https://calendar.google.com/calendar/ical/de.german%23holiday%40group.v.calendar.google.com/public/basic.ics"
+  route: watch
+  adapter: ics_calendar
+- id: sister
+  text: "Is my sister Anna OK? She hasn't texted since she landed in Lisbon."
+  route: person
+- id: dad
+  text: "I keep worrying about my dad living alone. Is he alright today?"
+  route: person
+- id: friend
+  text: "I think my friend is annoyed with me after what I said at dinner."
+  route: park
+- id: illness
+  text: "What if I get seriously ill someday?"
+  route: park

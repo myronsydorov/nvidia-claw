@@ -18,7 +18,7 @@ test("hand over → approve → watching, against a real Warden", async ({
 	await page.getByLabel("What's on your mind?").fill(text);
 	await page.getByRole("button", { name: "Hand it over" }).click();
 
-	// The Warden's (mock) compiler reaches awaiting_approval → permission card.
+	// The Warden's compiler (replayed model answers) reaches awaiting_approval → permission card.
 	await expect(page.getByText("Your watcher asks to reach:")).toBeVisible({
 		timeout: 15_000,
 	});

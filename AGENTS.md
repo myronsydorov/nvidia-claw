@@ -27,9 +27,10 @@ scripts/          setup, restart.sh, spikes
 ## Commands
 Keep this list in sync with the Makefile.
 - `make setup`: install everything (uv for Python, pnpm for the app)
-- `make dev`: run Warden + app locally with mock sandboxes and the mock compiler stage (`CUSTODY_SANDBOX=mock CUSTODY_COMPILER=mock`); open the app and paste `WARDEN_DEVICE_TOKEN`
+- `make dev`: run Warden + app locally with mock sandboxes (`CUSTODY_SANDBOX=mock`) and the real compiler, which calls NVIDIA Build if `NVIDIA_API_KEY` is in `.env` and otherwise replays recorded model answers (`CUSTODY_LLM_REPLAY`); open the app and paste `WARDEN_DEVICE_TOKEN`
 - `make lint` · `make typecheck` · `make test`: must pass before any commit
 - `make e2e`: Playwright smoke test (hand over → approve → watching) against a real local Warden
+- `make eval-compiler`: opt-in, live: 10 labelled worries through the compiler against NVIDIA Build (needs `NVIDIA_API_KEY`); ≥ 8 must pass
 - `make spike`: OpenShell sandbox create → policy → exec → delete (needs a NemoClaw host)
 - Python only: `uv run pytest -q`, `uv run ruff check --fix`, `uv run mypy warden`
 - App only: `pnpm -C app dev|dev:mock|build|test|e2e|lint|typecheck` (`dev:mock` = in-memory mock API, no Warden)

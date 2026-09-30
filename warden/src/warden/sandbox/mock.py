@@ -1,7 +1,7 @@
 """In-memory SandboxDriver used when CUSTODY_SANDBOX=mock. No openshell calls."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from warden.sandbox.driver import ExecResult, SandboxHandle
@@ -11,6 +11,7 @@ from warden.sandbox.driver import ExecResult, SandboxHandle
 class _MockSandbox:
     handle: SandboxHandle
     policy_yaml: str | None = None
+    files: dict[str, str] = field(default_factory=dict)
 
 
 class MockDriver:
@@ -26,6 +27,15 @@ class MockDriver:
 
     async def apply_policy(self, name: str, policy_yaml: str) -> None:
         self._sandboxes[name].policy_yaml = policy_yaml
+
+    async def write_file(self, name: str, path: str, content: str) -> None:
+        # Stored in memory only; the mock never writes watcher code to the host disk.
+        self._sandboxes[name].files[path] = content
+
+    def file(self, name: str, path: str) -> str | None:
+        """Test helper: what was written into a sandbox."""
+        sandbox = self._sandboxes.get(name)
+        return sandbox.files.get(path) if sandbox else None
 
     async def exec(self, name: str, command: list[str]) -> ExecResult:
         if name not in self._sandboxes:

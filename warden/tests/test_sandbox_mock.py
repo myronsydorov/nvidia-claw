@@ -33,3 +33,17 @@ def test_factory_raises_for_unconfigured_sandbox(monkeypatch: pytest.MonkeyPatch
     monkeypatch.delenv("CUSTODY_SANDBOX", raising=False)
     with pytest.raises(NotImplementedError):
         get_sandbox_driver()
+
+
+def test_mock_driver_write_file_keeps_code_in_memory() -> None:
+    async def run() -> None:
+        driver = MockDriver()
+        await driver.create("cw-files", image="watcher-base")
+        await driver.write_file("cw-files", "/w/run.py", "print('hi')\n")
+        assert driver.file("cw-files", "/w/run.py") == "print('hi')\n"
+        await driver.delete("cw-files")
+        assert driver.file("cw-files", "/w/run.py") is None
+        with pytest.raises(KeyError):
+            await driver.write_file("cw-files", "/w/run.py", "x")
+
+    asyncio.run(run())

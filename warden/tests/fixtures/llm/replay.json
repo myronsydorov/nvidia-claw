@@ -1,0 +1,51 @@
+{
+  "_note": "Hand-written responses in the shape the live models return (T-09). Regenerate from real calls with `make eval-compiler ARGS=--record`.",
+  "cases": [
+    {
+      "match": [
+        "parcel",
+        "dhl",
+        "package"
+      ],
+      "triage": "{\"type\": \"deadline\", \"fear\": \"DHL parcel not delivered by 2026-10-02T16:00Z\", \"deadline\": \"2026-10-02T16:00:00Z\", \"route\": \"watch\", \"signal\": \"DHL tracking status\"}",
+      "codegen": "```json\n{\"adapters\": [{\"name\": \"parcel_dhl\", \"params\": {}}], \"interval_s\": 3600}\n```\n```python\nfrom watcher_runtime import harness\nfrom watcher_runtime.adapters import parcel_dhl\n\nTRACKING = \"00340434161094042557\"\nDEADLINE = \"2026-10-02T16:00:00Z\"\n\ntry:\n    parcel = parcel_dhl.fetch(TRACKING)\nexcept Exception:\n    harness.fail(\"I couldn't reach DHL tracking just now.\")\nelse:\n    if parcel.get(\"delivered\"):\n        harness.emit(\"resolved\", \"Your parcel was delivered.\", \"DHL\",\n                     {\"status\": parcel.get(\"status\")}, fear_came_true=False)\n    elif not parcel.get(\"found\"):\n        harness.emit(\"ok\", \"DHL doesn't list the parcel yet.\", \"DHL\", next_check_s=3600)\n    elif harness.hours_until(DEADLINE) < 6:\n        harness.emit(\"act_now\", \"Parcel still not delivered and the deadline is close.\", \"DHL\",\n                     {\"status\": parcel.get(\"status\")}, next_check_s=1800)\n    else:\n        harness.emit(\"ok\", \"Parcel is on its way.\", \"DHL\",\n                     {\"status\": parcel.get(\"status\")}, next_check_s=3600)\n```\n"
+    },
+    {
+      "match": [
+        "train",
+        "s1",
+        "bvg",
+        "s-bahn"
+      ],
+      "triage": "{\"type\": \"checkable\", \"fear\": \"the S1 from Alexanderplatz is cancelled\", \"deadline\": null, \"route\": \"watch\", \"signal\": \"BVG departures\"}",
+      "codegen": "```json\n{\"adapters\": [{\"name\": \"transit_bvg\", \"params\": {\"stop_id\": \"900100003\"}}], \"interval_s\": 900}\n```\n```python\nfrom watcher_runtime import harness\nfrom watcher_runtime.adapters import transit_bvg\n\ntry:\n    board = transit_bvg.fetch(\"900100003\")\nexcept Exception:\n    harness.fail(\"I couldn't read the departures board just now.\")\nelse:\n    s1 = [d for d in board[\"departures\"] if d.get(\"line\") == \"S1\"]\n    cancelled = [d for d in s1 if d.get(\"cancelled\")]\n    if cancelled:\n        harness.emit(\"act_now\", \"An S1 departure is cancelled. Plan another way.\", \"BVG\",\n                     {\"cancelled\": len(cancelled)}, next_check_s=900)\n    else:\n        harness.emit(\"ok\", \"The S1 is running.\", \"BVG\", {\"departures\": len(s1)}, next_check_s=900)\n```\n"
+    },
+    {
+      "match": [
+        "rain",
+        "weather",
+        "wedding"
+      ],
+      "triage": "{\"type\": \"deadline\", \"fear\": \"rain in Berlin on 2026-10-03\", \"deadline\": \"2026-10-03T22:00:00Z\", \"route\": \"watch\", \"signal\": \"Open-Meteo forecast\"}",
+      "codegen": "```json\n{\"adapters\": [{\"name\": \"weather_openmeteo\", \"params\": {}}], \"interval_s\": 21600}\n```\n```python\nfrom watcher_runtime import harness\nfrom watcher_runtime.adapters import weather_openmeteo\n\nDAY = \"2026-10-03\"\n\ntry:\n    forecast = weather_openmeteo.fetch(52.52, 13.405)\nexcept Exception:\n    harness.fail(\"I couldn't read the forecast just now.\")\nelse:\n    day = [d for d in forecast[\"daily\"] if d.get(\"date\") == DAY]\n    if not day:\n        harness.emit(\"ok\", \"The day is not in the forecast yet.\", \"Open-Meteo\", next_check_s=21600)\n    elif (day[0].get(\"precipitation_mm\") or 0) >= 5:\n        harness.emit(\"act_now\", \"Rain is forecast for the day. Maybe plan a backup.\",\n                     \"Open-Meteo\", {\"precipitation_mm\": day[0][\"precipitation_mm\"]},\n                     next_check_s=21600)\n    else:\n        harness.emit(\"ok\", \"The forecast looks dry.\", \"Open-Meteo\", next_check_s=21600)\n```\n"
+    },
+    {
+      "match": [
+        "mum",
+        "mom",
+        "sister",
+        "is anna"
+      ],
+      "triage": "{\"type\": \"person\", \"fear\": \"mum is not OK\", \"deadline\": null, \"route\": \"person\", \"signal\": \"\"}"
+    },
+    {
+      "match": [
+        "boss",
+        "friend",
+        "annoyed",
+        "economy"
+      ],
+      "triage": "{\"type\": \"social\", \"fear\": \"my boss thinks badly of me\", \"deadline\": null, \"route\": \"park\", \"signal\": \"\"}"
+    }
+  ]
+}

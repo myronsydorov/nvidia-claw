@@ -1,10 +1,11 @@
 import asyncio
+import contextlib
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from warden.compiler import mock as mock_compiler
+from warden.compiler import Compiler
 from warden.db import Store
 from warden.ids import new_worry_id
 from warden.models import (
@@ -18,6 +19,7 @@ from warden.models import (
     WorrySummary,
 )
 from warden.state import get_driver, get_events, get_store
+from warden.watch_output import RUN_PATH
 from warden.worry_rows import save_watcher, save_worry
 
 router = APIRouter()
@@ -84,10 +86,11 @@ async def create_worry(body: WorryCreateRequest, request: Request) -> Worry:
     await save_worry(store, worry, timeline)
     events = get_events(request)
     await events.publish("worry.updated", {"worry_id": worry.id})
-    if mock_compiler.enabled():
-        # Stand-in until T-09's compiler; the set keeps the task referenced.
-        tasks: set[asyncio.Task[None]] = request.app.state.background_tasks
-        task = asyncio.create_task(mock_compiler.mock_compile(store, events, worry.id))
+    compiler: Compiler | None = request.app.state.compiler
+    if compiler is not None:
+        # The set keeps the task referenced; the lifespan cancels it on shutdown.
+        tasks: set[asyncio.Task[object]] = request.app.state.background_tasks
+        task: asyncio.Task[object] = asyncio.create_task(compiler.compile_worry(worry.id))
         tasks.add(task)
         task.add_done_callback(tasks.discard)
     return worry
@@ -128,7 +131,14 @@ async def approve_worry(worry_id: str, request: Request) -> WorryDetail:
 
         driver = get_driver(request)
         await driver.create(watcher.sandbox_name, image="watcher-base")
-        await driver.apply_policy(watcher.sandbox_name, watcher.policy_yaml)
+        try:
+            await driver.apply_policy(watcher.sandbox_name, watcher.policy_yaml)
+            await driver.write_file(watcher.sandbox_name, RUN_PATH, watcher.code)
+        except Exception:
+            # Never leave a half-built sandbox behind; the watcher stays awaiting_approval.
+            with contextlib.suppress(Exception):
+                await driver.delete(watcher.sandbox_name)
+            raise
         watcher.state = "active"
 
         now = _now()

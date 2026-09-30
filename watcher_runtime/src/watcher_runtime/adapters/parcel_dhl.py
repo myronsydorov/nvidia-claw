@@ -3,8 +3,13 @@
 `fetch` hits GET https://api-eu.dhl.com/track/shipments (the declared endpoint's
 exact path); the tracking number travels as a query parameter, never in the
 path. `parse` is pure and fixture-tested; `fetch` is not.
+
+The API key is read here, from the sandbox's provider-injected environment, never
+passed in by watcher code: generated code has no way to read a secret value
+(security review T-09), so it can't leak one into a summary or a URL.
 """
 
+import os
 from typing import Any
 
 import httpx2 as httpx
@@ -12,7 +17,8 @@ import httpx2 as httpx
 _BASE_URL = "https://api-eu.dhl.com"
 
 
-def fetch(tracking_number: str, api_key: str) -> dict[str, Any]:
+def fetch(tracking_number: str) -> dict[str, Any]:
+    api_key = os.environ.get("DHL_API_KEY", "")
     with httpx.Client(base_url=_BASE_URL, timeout=10) as client:
         response = client.get(
             "/track/shipments",

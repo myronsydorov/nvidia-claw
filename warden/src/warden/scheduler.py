@@ -6,29 +6,23 @@ Silence is the default: an `ok` result changes live status and nothing else.
 """
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol
 
-from pydantic import ValidationError
-
 from warden.db import Store
 from warden.events import EventBus
 from warden.models import Evidence, TimelineEvent, Watcher, WatchResult, Worry
 from warden.sandbox.driver import SandboxDriver
+from warden.watch_output import RUN_COMMAND, OutputProblem, parse_output
 from warden.worry_rows import parse_row, save_watcher, save_worry
 
 log = logging.getLogger(__name__)
 
-RUN_COMMAND = ["python3", "/w/run.py"]
 MIN_NEXT_CHECK_S = 300  # a watcher can't ask to be re-run sooner: no "check again" loops
 MAX_NEXT_CHECK_S = 86400
 ERRORS_BEFORE_PAUSE = 3
-MAX_STDOUT_CHARS = 64 * 1024  # anything bigger is not a WatchResult; don't even parse it
-MAX_EVIDENCE_SOURCE_CHARS = 64
-MAX_EVIDENCE_DATA_CHARS = 4096  # watched content must not be stored verbatim
 ASK_OUTCOME_TEXT = "Did what you feared happen?"
 
 PushKind = Literal["act_now", "ask_outcome", "watcher_paused"]
@@ -196,18 +190,12 @@ class Scheduler:
                 extra={"watcher_id": watcher.id, "error": type(exc).__name__},
             )
             return self._error_result("The check could not run.")
-        if out.exit_code != 0:
-            return self._error_result("The check stopped with an error.")
-        if len(out.stdout) > MAX_STDOUT_CHARS:
-            return self._error_result("The check gave an answer that was far too long.")
         try:
-            result = WatchResult.model_validate(json.loads(out.stdout))
-        except (ValueError, RecursionError, ValidationError):
-            # ValueError covers JSONDecodeError and over-long int literals; RecursionError
-            # covers deeply nested input. Log that it happened, never the payload itself.
+            return parse_output(out)
+        except OutputProblem as problem:
+            # Log that it happened, never the payload itself.
             log.warning("invalid watcher output", extra={"watcher_id": watcher.id})
-            return self._error_result("The check gave an answer I couldn't read.")
-        return _bounded(result)
+            return self._error_result(problem.summary)
 
     def _error_result(self, summary: str) -> WatchResult:
         return WatchResult(
@@ -306,15 +294,3 @@ class Scheduler:
         await self._events.publish(
             "watcher.result", {"worry_id": watcher.worry_id, "status": result.status}
         )
-
-
-def _bounded(result: WatchResult) -> WatchResult:
-    """Cap the untrusted evidence before it is stored and served back out."""
-    evidence = result.evidence
-    data = evidence.data
-    if len(json.dumps(data)) > MAX_EVIDENCE_DATA_CHARS:
-        data = {"truncated": True}
-    bounded = evidence.model_copy(
-        update={"source": evidence.source[:MAX_EVIDENCE_SOURCE_CHARS], "data": data}
-    )
-    return result.model_copy(update={"evidence": bounded})
