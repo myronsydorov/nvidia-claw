@@ -1,32 +1,10 @@
-# React + TypeScript + Vite
+# Custody app
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Installable web app (React + Vite + Tailwind). It talks only to the Warden's `/api` (docs/CONTRACTS.md §3). In dev, Vite proxies `/api` to `WARDEN_URL` (default `http://127.0.0.1:8000`).
 
-Currently, two official plugins are available:
+- `make dev` (repo root): Warden with mock sandboxes and the mock compiler, plus this app. Open it and paste your `WARDEN_DEVICE_TOKEN` on the Connect screen. The token stays in this browser's localStorage.
+- `pnpm dev:mock`: the app on an in-memory mock API (`VITE_API_MODE=mock`), no Warden needed.
+- `pnpm test`: Vitest (contract schemas, HTTP client, SSE parser/reconnect, mock API).
+- `pnpm e2e`: Playwright smoke test. It starts a real Warden (`CUSTODY_SANDBOX=mock CUSTODY_COMPILER=mock`, temp DB) and Vite, then runs hand over → approve → watching at 390×844. The first time, run `pnpm exec playwright install chromium`.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Live updates come from `GET /api/events` over `fetch` (EventSource can't send the bearer header). The stream reconnects with backoff and emits a `connected` signal so screens refetch what they missed.

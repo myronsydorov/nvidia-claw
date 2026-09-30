@@ -1,8 +1,10 @@
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
+from warden.compiler import mock as mock_compiler
 from warden.db import Store
 from warden.ids import new_worry_id
 from warden.models import (
@@ -80,7 +82,14 @@ async def create_worry(body: WorryCreateRequest, request: Request) -> Worry:
     )
     timeline = [TimelineEvent(at=now, kind="created", text="You handed it over.")]
     await save_worry(store, worry, timeline)
-    await get_events(request).publish("worry.updated", {"worry_id": worry.id})
+    events = get_events(request)
+    await events.publish("worry.updated", {"worry_id": worry.id})
+    if mock_compiler.enabled():
+        # Stand-in until T-09's compiler; the set keeps the task referenced.
+        tasks: set[asyncio.Task[None]] = request.app.state.background_tasks
+        task = asyncio.create_task(mock_compiler.mock_compile(store, events, worry.id))
+        tasks.add(task)
+        task.add_done_callback(tasks.discard)
     return worry
 
 
@@ -160,7 +169,7 @@ async def deny_worry(worry_id: str, request: Request) -> WorryDetail:
 @router.post("/api/worries/{worry_id}/let-go")
 async def let_go_worry(worry_id: str, request: Request) -> WorryDetail:
     store = get_store(request)
-    async with store.write_lock:
+    async with store.write_lock:  # never interleave with the scheduler or a compile step
         row = await _row(store, worry_id)
         worry = Worry.model_validate(row["worry"])
 

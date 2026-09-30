@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI
 
 from warden import db
 from warden.auth import require_device_token
+from warden.compiler import mock as mock_compiler
 from warden.events import EventBus
 from warden.routers import events, health, ledger, people, push, sharing_rules, worries
 from warden.sandbox.factory import get_sandbox_driver
@@ -18,20 +19,29 @@ from warden.scheduler import LogPushNotifier, Scheduler, SystemClock
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.events = EventBus()
     app.state.driver = get_sandbox_driver()
+    app.state.background_tasks = set()  # mock-compile tasks (T-12); scheduler joins on shutdown too
+    mock_compiler.enabled()  # fail fast on CUSTODY_COMPILER=mock without mock sandboxes
     async with db.lifespan(app):
-        if os.environ.get("WARDEN_SCHEDULER") == "off":
-            yield
-            return
-        scheduler = Scheduler(
-            app.state.store, app.state.driver, app.state.events, SystemClock(), LogPushNotifier()
-        )
-        task = asyncio.create_task(scheduler.run_forever())
+        scheduler_task: asyncio.Task[None] | None = None
+        if os.environ.get("WARDEN_SCHEDULER") != "off":
+            scheduler = Scheduler(
+                app.state.store,
+                app.state.driver,
+                app.state.events,
+                SystemClock(),
+                LogPushNotifier(),
+            )
+            scheduler_task = asyncio.create_task(scheduler.run_forever())
         try:
             yield
         finally:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+            tasks: set[asyncio.Task[None]] = app.state.background_tasks
+            if scheduler_task is not None:
+                tasks.add(scheduler_task)
+            for task in list(tasks):
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
 
 app = FastAPI(

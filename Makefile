@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: setup dev lint typecheck test spike
+.PHONY: setup dev lint typecheck test e2e spike
 
 setup:
 	uv sync --all-packages
@@ -8,7 +8,7 @@ setup:
 
 dev:
 	@trap 'kill 0' EXIT; \
-	CUSTODY_SANDBOX=mock uv run --package warden uvicorn warden.app:app --reload --port 8000 & \
+	CUSTODY_SANDBOX=mock CUSTODY_COMPILER=mock uv run --package warden uvicorn warden.app:app --reload --port 8000 & \
 	pnpm -C app dev & \
 	wait
 
@@ -23,6 +23,9 @@ typecheck:
 test:
 	uv run pytest -q
 	pnpm -C app test
+
+e2e:
+	pnpm -C app e2e
 
 spike:
 	@echo "T-04 spike stub: openshell sandbox create -> policy set --wait -> exec run.py -> delete."

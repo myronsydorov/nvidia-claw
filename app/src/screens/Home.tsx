@@ -5,7 +5,7 @@ import { Orb, Screen, SectionLabel } from "../components/ui";
 import { statusLabel } from "../lib/labels";
 import { href, navigate } from "../lib/router";
 import { ago } from "../lib/time";
-import { useAsync } from "../lib/useAsync";
+import { useAsync, useLiveEvents } from "../lib/useAsync";
 
 function subline(items: WorrySummary[]): string {
 	const held = items.filter((i) => i.worry.status !== "parked").length;
@@ -120,7 +120,14 @@ function MindInput() {
 
 export function Home() {
 	const list = useAsync(() => api.listWorries(), "home");
-	const items = list.state === "ready" ? list.data : [];
+	useLiveEvents(api.subscribe, (e) => {
+		if (e.type === "connected" || e.type === "worry.updated") list.reload();
+	});
+	// GET /api/worries returns resolved worries too; Home shows only what's held.
+	const items =
+		list.state === "ready"
+			? list.data.filter((i) => i.worry.status !== "resolved")
+			: [];
 	const needsYou = items.some((i) => i.worry.status === "needs_you");
 	const parked = items.filter((i) => i.worry.status === "parked");
 	const held = items.filter((i) => i.worry.status !== "parked");

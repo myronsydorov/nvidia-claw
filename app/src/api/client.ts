@@ -1,9 +1,13 @@
+import { navigate } from "../lib/router";
+import { clearToken, getToken } from "../lib/token";
 import {
 	buildDetail,
 	initialDetails,
 	iso,
 	pickTemplate,
 } from "../mocks/fixtures";
+import { createEventStream, type Listener } from "./events";
+import { createHttpApi } from "./http";
 import {
 	type WorryDetail,
 	type WorrySummary,
@@ -11,8 +15,8 @@ import {
 	worrySummarySchema,
 } from "./schemas";
 
-// The app's view of the Warden's /api (docs/CONTRACTS.md §3).
-// T-05 ships only the in-memory mock; T-12 adds the HTTP implementation.
+// The app's view of the Warden's /api (docs/CONTRACTS.md §3): the HTTP client
+// in ./http.ts, or this in-memory mock when VITE_API_MODE=mock (`pnpm dev:mock`).
 export interface Api {
 	listWorries(): Promise<WorrySummary[]>;
 	getWorry(id: string): Promise<WorryDetail>;
@@ -21,6 +25,8 @@ export interface Api {
 	approve(id: string): Promise<WorryDetail>;
 	deny(id: string): Promise<WorryDetail>;
 	letGo(id: string): Promise<WorryDetail>;
+	/** Live updates (GET /api/events). Returns an unsubscribe function. */
+	subscribe(listener: Listener): () => void;
 }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -36,26 +42,33 @@ export function createMockApi(latencyMs = 250): Api {
 		return d;
 	}
 
+	const listeners = new Set<Listener>();
+	function changed(id: string) {
+		for (const l of [...listeners]) {
+			l({ type: "worry.updated", data: { worry_id: id } });
+		}
+	}
+
 	function update(
 		id: string,
 		change: (d: WorryDetail) => WorryDetail,
 	): WorryDetail {
 		const next = worryDetailSchema.parse(change(structuredClone(get(id))));
 		store.set(id, next);
+		changed(id);
 		return next;
 	}
 
 	return {
 		async listWorries() {
 			await wait(latencyMs);
-			return [...store.values()]
-				.filter((d) => d.worry.status !== "resolved")
-				.map((d) =>
-					worrySummarySchema.parse({
-						worry: d.worry,
-						last_result: d.watcher?.last_result ?? null,
-					}),
-				);
+			// Like the Warden: every worry, resolved ones included.
+			return [...store.values()].map((d) =>
+				worrySummarySchema.parse({
+					worry: d.worry,
+					last_result: d.watcher?.last_result ?? null,
+				}),
+			);
 		},
 		async getWorry(id) {
 			await wait(latencyMs);
@@ -69,6 +82,7 @@ export function createMockApi(latencyMs = 250): Api {
 				checkedAgoMs: null,
 			});
 			store.set(d.worry.id, d);
+			changed(d.worry.id);
 			return d;
 		},
 		async approve(id) {
@@ -110,7 +124,28 @@ export function createMockApi(latencyMs = 250): Api {
 				return d;
 			});
 		},
+		subscribe(listener) {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		},
 	};
 }
 
-export const api: Api = createMockApi();
+export const mockMode = import.meta.env.VITE_API_MODE === "mock";
+
+function onUnauthorized() {
+	clearToken();
+	navigate({ name: "connect" });
+}
+
+export const api: Api = mockMode
+	? createMockApi()
+	: createHttpApi({
+			getToken,
+			onUnauthorized,
+			events: createEventStream({
+				url: "/api/events",
+				getToken,
+				onUnauthorized,
+			}),
+		});

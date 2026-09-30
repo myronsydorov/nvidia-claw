@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 
-// A tiny hash router: #/, #/hand-over?text=…, #/worry/:id
+// A tiny hash router: #/, #/hand-over?text=…, #/worry/:id, #/connect
 
 export type Route =
 	| { name: "home" }
 	| { name: "hand-over"; text: string }
-	| { name: "worry"; id: string };
+	| { name: "worry"; id: string }
+	| { name: "connect" };
 
 export function parseHash(hash: string): Route {
 	const [path = "", query = ""] = hash.replace(/^#/, "").split("?");
@@ -15,6 +16,7 @@ export function parseHash(hash: string): Route {
 			text: new URLSearchParams(query).get("text") ?? "",
 		};
 	}
+	if (path === "/connect") return { name: "connect" };
 	const worry = /^\/worry\/([A-Za-z0-9_]+)$/.exec(path);
 	if (worry?.[1]) return { name: "worry", id: worry[1] };
 	return { name: "home" };
@@ -28,6 +30,8 @@ export function href(route: Route): string {
 			return `#/hand-over?${new URLSearchParams({ text: route.text })}`;
 		case "worry":
 			return `#/worry/${route.id}`;
+		case "connect":
+			return "#/connect";
 	}
 }
 
