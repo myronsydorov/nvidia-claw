@@ -1,0 +1,8 @@
+# provisional policy schema — real OpenShell CLI syntax pinned by T-04 (ADR-0001)
+sandbox: cw-web-diff1
+egress:
+- host: visa.example.com
+  port: 443
+  method: GET
+  path: /appointments
+  why: check for a new visa appointment slot

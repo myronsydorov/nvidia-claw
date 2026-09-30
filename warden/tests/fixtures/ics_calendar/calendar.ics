@@ -1,0 +1,18 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Calendar//EN
+BEGIN:VEVENT
+UID:event1@example.com
+DTSTART:20261005T090000Z
+DTEND:20261005T100000Z
+SUMMARY:Dentist appointment
+LOCATION:123 Main St
+END:VEVENT
+BEGIN:VEVENT
+UID:event2@example.com
+DTSTART:20261010T140000Z
+DTEND:20261010T150000Z
+SUMMARY:Visa interview with a long summary line that needs folding across
+  multiple physical lines per RFC 5545
+END:VEVENT
+END:VCALENDAR

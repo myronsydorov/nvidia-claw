@@ -9,7 +9,14 @@ dependencies = [
     "pydantic>=2.9",
     "aiosqlite>=0.22.1",
     "python-ulid>=4.0.1",
+    "pyyaml>=6.0",
 ]
+
+[dependency-groups]
+test = ["watcher_runtime"]
+
+[tool.uv.sources]
+watcher_runtime = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

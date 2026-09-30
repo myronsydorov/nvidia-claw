@@ -1,0 +1,8 @@
+# provisional policy schema — real OpenShell CLI syntax pinned by T-04 (ADR-0001)
+sandbox: cw-http-json1
+egress:
+- host: status.example.com
+  port: 443
+  method: GET
+  path: /api/slots
+  why: check appointment slot availability

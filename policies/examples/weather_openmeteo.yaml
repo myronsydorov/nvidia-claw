@@ -1,0 +1,8 @@
+# provisional policy schema — real OpenShell CLI syntax pinned by T-04 (ADR-0001)
+sandbox: cw-weather-om1
+egress:
+- host: api.open-meteo.com
+  port: 443
+  method: GET
+  path: /v1/forecast
+  why: check the weather forecast

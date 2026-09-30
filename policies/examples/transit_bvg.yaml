@@ -1,0 +1,8 @@
+# provisional policy schema — real OpenShell CLI syntax pinned by T-04 (ADR-0001)
+sandbox: cw-transit-bvg1
+egress:
+- host: v6.bvg.transport.rest
+  port: 443
+  method: GET
+  path: /stops/900000100003/departures
+  why: check departures for the platform near home

@@ -3,7 +3,7 @@ name = "watcher_runtime"
 version = "0.1.0"
 description = "Custody watcher runtime: base image, run harness and adapter library imported by watchers"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["httpx2>=0.1"]
 
 [build-system]
 requires = ["hatchling"]

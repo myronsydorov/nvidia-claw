@@ -1,0 +1,8 @@
+# provisional policy schema — real OpenShell CLI syntax pinned by T-04 (ADR-0001)
+sandbox: cw-flight1
+egress:
+- host: opensky-network.org
+  port: 443
+  method: GET
+  path: /api/states/all
+  why: check flight status

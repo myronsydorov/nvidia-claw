@@ -21,7 +21,7 @@ Status: `todo · doing · done · cut`. Every task has **acceptance criteria and
 | ID | Owner | Task | Acceptance / verify | Status |
 |---|---|---|---|---|
 | T-07 | Claude | Warden core: FastAPI, SQLite, models per CONTRACTS, server-sent events, device-token auth, `/api/health` | pytest covers every route; contract tests compare Pydantic with the zod schemas | done‡ |
-| T-08 | Claude | Adapter library v1 (see CONTRACTS §1), each with endpoint declarations and fixture tests | `uv run pytest warden/adapters` passes; the policy generator output snapshots contain no wildcards | todo |
+| T-08 | Claude | Adapter library v1 (see CONTRACTS §1), each with endpoint declarations and fixture tests | `uv run pytest warden/adapters` passes; the policy generator output snapshots contain no wildcards | done§ |
 | T-09 | Claude | Compiler: triage → code generation against adapters → policy generation → dry run → retry ×2 → park | 10 labelled sample worries: ≥ 8 routed correctly; generated watchers pass their dry run | todo |
 | T-10 | Claude | Scheduler, act-now alerts, auto-resolve at deadline, the "did it happen?" question | Simulated clock test: silence while `ok`, exactly one alert on `act_now` | todo |
 | T-11 | Claude | Brain: OpenClaw `custody` skill, standing orders, MCP tool wiring | From chat, "I'm worried X" leads to a Worry appearing in `/api/worries` | todo |
@@ -29,6 +29,8 @@ Status: `todo · doing · done · cut`. Every task has **acceptance criteria and
 | T-13 | You | **Dogfood:** hand over your real worries from the phone | ≥ 6 worry types have been through the full flow | todo |
 
 ‡ T-07: all 14 `/api` routes from CONTRACTS §3, aiosqlite persistence, an in-process SSE bus, global bearer auth (incl. `/api/health`, plus `/docs`/`/openapi.json`/`/redoc` disabled per the security-reviewer pass), and `sandboxes_live` computed from the DB. `warden/tests/test_contract_zod_sync.py` diffs every Pydantic/zod pair field-by-field via `z.toJSONSchema`. No compiler/adapters/scheduler (T-08–T-10) — routes that depend on them return honest minimal/zero placeholders, commented inline.
+
+§ T-08: 8 of 9 v1 adapters built — `transit_bvg`, `parcel_dhl`, `weather_openmeteo`, `web_diff`, `http_json` (required) plus `rss`, `ics_calendar`, `flight_status` (stretch, time allowed). `imap_search` deferred: IMAP isn't an HTTP GET call and `Endpoint.method`/`PermissionLine.method` are `Literal["GET"]`, so it needs a new method/protocol literal plus an ADR per AGENTS invariant #2 — out of scope for a library task. `warden/src/warden/compiler/policy.py` generates the OpenShell policy YAML + `policy_summary` from adapter declarations (dedupes identical endpoints, raises on a conflicting `why`); `policies/examples/*.yaml` are the checked-in golden snapshots (95 tests in `warden/tests/adapters`, wildcard-freedom asserted structurally via `Endpoint`/`Adapter` regex constraints and a field validator rejecting bare IP-literal hosts, not just a substring check).
 
 ## Thu 1 Oct: L2, Ledger, push
 | ID | Owner | Task | Acceptance / verify | Status |

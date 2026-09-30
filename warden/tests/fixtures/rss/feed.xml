@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Example City Council Notices</title>
+    <link>https://council.example.gov/notices</link>
+    <item>
+      <title>Street closure: Main St, Oct 3-5</title>
+      <link>https://council.example.gov/notices/street-closure-main-st</link>
+      <pubDate>Tue, 29 Sep 2026 09:00:00 GMT</pubDate>
+      <guid>https://council.example.gov/notices/street-closure-main-st</guid>
+    </item>
+    <item>
+      <title>Public hearing: zoning change rescheduled</title>
+      <link>https://council.example.gov/notices/zoning-hearing-reschedule</link>
+      <pubDate>Mon, 28 Sep 2026 15:30:00 GMT</pubDate>
+      <guid>https://council.example.gov/notices/zoning-hearing-reschedule</guid>
+    </item>
+  </channel>
+</rss>

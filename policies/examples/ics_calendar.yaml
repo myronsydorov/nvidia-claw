@@ -1,0 +1,8 @@
+# provisional policy schema — real OpenShell CLI syntax pinned by T-04 (ADR-0001)
+sandbox: cw-ics1
+egress:
+- host: cal.example.com
+  port: 443
+  method: GET
+  path: /family/events.ics
+  why: check for new calendar events

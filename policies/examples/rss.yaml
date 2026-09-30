@@ -1,0 +1,8 @@
+# provisional policy schema — real OpenShell CLI syntax pinned by T-04 (ADR-0001)
+sandbox: cw-rss1
+egress:
+- host: council.example.gov
+  port: 443
+  method: GET
+  path: /notices/feed.xml
+  why: check for new council notices
