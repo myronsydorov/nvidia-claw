@@ -134,7 +134,24 @@ export function Home() {
 
 	return (
 		<Screen flushBottom>
-			<header className="flex flex-col items-center pt-14 pb-12 text-center">
+			<nav
+				aria-label="Elsewhere"
+				className="-mr-2 flex justify-end gap-1 text-sm text-muted"
+			>
+				<a
+					href={href({ name: "people" })}
+					className="rounded-full px-3 py-2 transition-colors hover:text-ink"
+				>
+					People
+				</a>
+				<a
+					href={href({ name: "ledger" })}
+					className="rounded-full px-3 py-2 transition-colors hover:text-ink"
+				>
+					Ledger
+				</a>
+			</nav>
+			<header className="flex flex-col items-center pt-4 pb-12 text-center">
 				<Orb />
 				<h1 className="mt-10 font-display text-[44px] leading-none font-light tracking-tight">
 					{needsYou ? "Something needs you." : "All quiet."}

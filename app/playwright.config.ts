@@ -11,8 +11,10 @@ const dbPath = join(mkdtempSync(join(tmpdir(), "custody-e2e-")), "warden.db");
 
 export default defineConfig({
 	testDir: "e2e",
+	testIgnore: "*.mock.spec.ts", // mock-mode tests: playwright.mock.config.ts
 	timeout: 30_000,
 	retries: 0,
+	workers: 1, // one Warden and one DB, shared by every spec
 	reporter: "list",
 	use: {
 		...devices["iPhone 14"],

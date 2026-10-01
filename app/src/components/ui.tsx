@@ -90,3 +90,37 @@ export function Button({
 		</button>
 	);
 }
+
+/** An on/off switch. The label is the accessible name. */
+export function Toggle({
+	label,
+	checked,
+	onChange,
+	disabled,
+}: {
+	label: string;
+	checked: boolean;
+	onChange: (next: boolean) => void;
+	disabled?: boolean;
+}) {
+	return (
+		<button
+			type="button"
+			role="switch"
+			aria-checked={checked}
+			aria-label={label}
+			disabled={disabled}
+			onClick={() => onChange(!checked)}
+			className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
+				checked ? "bg-accent" : "bg-line"
+			}`}
+		>
+			<span
+				aria-hidden
+				className={`absolute top-1 left-1 size-5 rounded-full shadow-sm transition-transform ${
+					checked ? "translate-x-5 bg-surface" : "bg-muted"
+				}`}
+			/>
+		</button>
+	);
+}

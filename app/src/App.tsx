@@ -5,6 +5,9 @@ import { getToken } from "./lib/token";
 import { Connect } from "./screens/Connect";
 import { HandOver } from "./screens/HandOver";
 import { Home } from "./screens/Home";
+import { Ledger } from "./screens/Ledger";
+import { People } from "./screens/People";
+import { Sharing } from "./screens/Sharing";
 import { WorryDetail } from "./screens/WorryDetail";
 
 function App() {
@@ -27,6 +30,12 @@ function App() {
 			return <HandOver key={route.text} text={route.text} />;
 		case "worry":
 			return <WorryDetail id={route.id} />;
+		case "people":
+			return <People />;
+		case "sharing":
+			return <Sharing />;
+		case "ledger":
+			return <Ledger />;
 	}
 }
 

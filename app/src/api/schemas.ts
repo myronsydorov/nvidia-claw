@@ -248,6 +248,9 @@ export const eventSchema = z.object({
 	data: z.record(z.string(), z.unknown()),
 });
 
+export type ReassuranceQuestion = z.infer<typeof reassuranceQuestionSchema>;
+export type ReassuranceLevel = z.infer<typeof reassuranceLevelSchema>;
+export type ReassuranceReason = z.infer<typeof reassuranceReasonSchema>;
 export type Peer = z.infer<typeof peerSchema>;
 export type ReassuranceAnswer = z.infer<typeof reassuranceAnswerSchema>;
 export type PrivacyReceipt = z.infer<typeof privacyReceiptSchema>;
