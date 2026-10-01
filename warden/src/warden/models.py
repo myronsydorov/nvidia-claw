@@ -31,6 +31,7 @@ TimelineKind = Literal[
     "act_now",
     "resolved",
     "let_go",
+    "retried",
     "parked",
     "failed",
 ]

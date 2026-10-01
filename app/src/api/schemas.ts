@@ -99,6 +99,7 @@ export const timelineEventSchema = z.object({
 		"act_now",
 		"resolved",
 		"let_go",
+		"retried",
 		"parked",
 		"failed",
 	]),

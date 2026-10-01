@@ -11,8 +11,8 @@ Change this file **first**, then the Pydantic models (`warden/src/warden/models.
 | `text` | str | as the user wrote or said it |
 | `type` | enum `unclassified \| checkable \| deadline \| person \| social \| uncontrollable` | `unclassified` from creation until triage sets a real value |
 | `fear` | str | the precise bad outcome, e.g. "parcel not delivered by 2026-10-02T16:00Z"; `""` until triage runs |
-| `deadline` | datetime? | after this, the worry resolves automatically |
-| `status` | enum `triaging \| compiling \| awaiting_approval \| watching \| needs_you \| resolved \| parked \| failed` | |
+| `deadline` | datetime? | after this, the worry resolves automatically. Stored UTC; the person's times are Europe/Berlin local, and the app shows them that way |
+| `status` | enum `triaging \| compiling \| awaiting_approval \| watching \| needs_you \| resolved \| parked \| failed` | `parked`: it can't be watched by nature (social, uncontrollable, about a person) or needs something from the person (a link, a stop); `failed`: building its watcher failed. `resolution` then says which phase failed in one sentence, nothing was set up (no watcher, no sandbox), `POST …/retry` builds again, and it isn't counted in the ledger |
 | `watcher_id` | `wt_<ulid>`? | |
 | `resolution` | str? | human-readable |
 | `fear_came_true` | bool? | asked once when the worry closes |
@@ -49,7 +49,7 @@ Invalid JSON or a missing `status` is treated as `error`. Three `error`s in a ro
 | field | type | notes |
 |---|---|---|
 | `at` | datetime | |
-| `kind` | enum `created \| triaged \| compiled \| approval_requested \| approved \| denied \| checked \| act_now \| resolved \| let_go \| parked \| failed` | |
+| `kind` | enum `created \| triaged \| compiled \| approval_requested \| approved \| denied \| checked \| act_now \| resolved \| let_go \| retried \| parked \| failed` | |
 | `text` | str | ≤ 140 chars, plain language, shown as-is in the app |
 
 ### WorrySummary (items of `GET /api/worries`)
@@ -148,6 +148,7 @@ Key ids are 32 lowercase hex chars. The ciphertext is standard base64, at most 4
 | GET | `/api/worries/{id}` | WorryDetail (Worry + Watcher + timeline) |
 | POST | `/api/worries/{id}/approve` | approve the watcher's policy → `active`; returns WorryDetail |
 | POST | `/api/worries/{id}/deny` | → `parked`; returns WorryDetail |
+| POST | `/api/worries/{id}/retry` | a `failed` build → `triaging` again (`retried` event); `409` for any other status; returns WorryDetail |
 | POST | `/api/worries/{id}/let-go` | user closes it → `resolved`; returns WorryDetail |
 | POST | `/api/worries/{id}/outcome` | `{ fear_came_true: bool }` → returns WorryDetail |
 | GET | `/api/people` | list[PeopleListItem] — peers + last answer |
@@ -185,6 +186,8 @@ Watcher `code` and `policy_yaml` are never returned.
 
 ## 5. Ledger (`GET /api/ledger`)
 `{ worries_total, active, never_needed_you, needed_you, median_warning_lead_h, came_true_rate, came_true_by_type{}, watchers_built, sandboxes_live, endpoints_denied, peer_questions_answered, locations_shared: 0 }` (`peer_questions_answered` = entries in my question log)
+
+- **Build failures are not counted** in any total: a worry with a `failed` event that was never `approved` (a watcher paused after errors was approved, so it counts). `watchers_built` counts watchers that passed their dry run.
 
 - `came_true_rate`: a fraction from 0 to 1 = `needed_you / (needed_you + never_needed_you)`, i.e. of the closed worries with a known outcome, the share whose fear came true. It is `0.0` while no outcome is known; clients must then check `needed_you + never_needed_you = 0` and claim nothing (the app shows "No outcomes yet"). `came_true_by_type` uses the same unit per worry type.
 - DESIGN §6 also mentions "rules approved" and "bytes that left the friend's device". They are **deliberately not** in this response: the per-answer privacy receipt already shows the bytes, and approvals are visible per worry.

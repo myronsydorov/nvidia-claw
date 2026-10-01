@@ -87,13 +87,7 @@ async def create_worry(body: WorryCreateRequest, request: Request) -> Worry:
     await save_worry(store, worry, timeline)
     events = get_events(request)
     await events.publish("worry.updated", {"worry_id": worry.id})
-    compiler: Compiler | None = request.app.state.compiler
-    if compiler is not None:
-        # The set keeps the task referenced; the lifespan cancels it on shutdown.
-        tasks: set[asyncio.Task[object]] = request.app.state.background_tasks
-        task: asyncio.Task[object] = asyncio.create_task(compiler.compile_worry(worry.id))
-        tasks.add(task)
-        task.add_done_callback(tasks.discard)
+    _start_compile(request, worry.id)
     return worry
 
 
@@ -182,6 +176,40 @@ async def deny_worry(worry_id: str, request: Request) -> WorryDetail:
         row = await save_worry(store, worry, timeline)
         await get_events(request).publish("worry.updated", {"worry_id": worry.id})
         return await _detail(store, row)
+
+
+def _start_compile(request: Request, worry_id: str) -> None:
+    compiler: Compiler | None = request.app.state.compiler
+    if compiler is not None:
+        # The set keeps the task referenced; the lifespan cancels it on shutdown.
+        tasks: set[asyncio.Task[object]] = request.app.state.background_tasks
+        task: asyncio.Task[object] = asyncio.create_task(compiler.compile_worry(worry_id))
+        tasks.add(task)
+        task.add_done_callback(tasks.discard)
+
+
+@router.post("/api/worries/{worry_id}/retry")
+async def retry_worry(worry_id: str, request: Request) -> WorryDetail:
+    """Build again after a build failure (`failed`). Parked worries aren't retried: they
+    can't be watched by nature, or need something from the person first."""
+    store = get_store(request)
+    async with store.write_lock:
+        row = await _row(store, worry_id)
+        worry = Worry.model_validate(row["worry"])
+        if worry.status != "failed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="only a failed build can be retried"
+            )
+        now = _now()
+        worry.status = "triaging"
+        worry.resolution = None
+        worry.updated_at = now
+        timeline = [TimelineEvent.model_validate(e) for e in row["timeline"]]
+        timeline.append(TimelineEvent(at=now, kind="retried", text="You asked me to try again."))
+        row = await save_worry(store, worry, timeline)
+    await get_events(request).publish("worry.updated", {"worry_id": worry.id})
+    _start_compile(request, worry.id)
+    return await _detail(store, row)
 
 
 @router.post("/api/worries/{worry_id}/let-go")

@@ -10,8 +10,6 @@ import pytest
 from warden.compiler.llm import LLMError, Message, Stage
 from warden.compiler.pipeline import (
     MAX_ATTEMPTS,
-    PARK_FAILED,
-    PARK_NO_MODEL,
     PARK_PERSON,
     PARK_WORRY_TIME,
     Compiler,
@@ -195,7 +193,7 @@ async def test_gate_rejection_is_fed_back_without_touching_a_sandbox(store: Stor
     assert "static checker rejected run.py" in retry_prompt and "subprocess" in retry_prompt
 
 
-async def test_three_failures_park_honestly_and_keep_the_failed_watcher(store: Store) -> None:
+async def test_three_failures_fail_honestly_and_leave_nothing_behind(store: Store) -> None:
     llm = ScriptedLLM([PARCEL["triage"]], [PARCEL["codegen"]] * MAX_ATTEMPTS)
     driver = ScriptedDriver(*[crash_run() for _ in range(MAX_ATTEMPTS)])
     c, _ = compiler(store, llm, driver)
@@ -203,11 +201,32 @@ async def test_three_failures_park_honestly_and_keep_the_failed_watcher(store: S
     outcome = await c.compile_worry(WORRY_ID)
 
     worry, kinds, watcher = await load(store)
-    assert outcome.status == "parked" and outcome.attempts == 3
-    assert (worry.status, worry.resolution) == ("parked", PARK_FAILED)
-    assert kinds[-1] == "parked"
-    assert watcher is not None and watcher.state == "dry_run_failed"
+    assert outcome.status == "failed" and outcome.attempts == 3
+    assert worry.status == "failed"
+    assert worry.resolution == (
+        "Testing the watcher failed: the check crashed. Nothing was set up; you can try again."
+    )
+    assert kinds[-1] == "failed"
+    # No half-created watcher, no sandbox left: the app shows no jail for it.
+    assert watcher is None and worry.watcher_id is None
     assert len(driver.created) == 3 and driver.live == set()
+
+
+async def test_s7_incident_a_source_that_refuses_is_a_testing_failure(store: Store) -> None:
+    # The S7 watcher's stop id didn't exist: BVG answered 404 and run.py reported `error`.
+    error = json.loads(ok_run().stdout) | {"status": "error", "summary": "BVG unreachable"}
+    err_run = ExecResult(json.dumps(error), "", 0)
+    llm = ScriptedLLM([PARCEL["triage"]], [PARCEL["codegen"]] * MAX_ATTEMPTS)
+    driver = ScriptedDriver(*[err_run] * MAX_ATTEMPTS)
+    c, _ = compiler(store, llm, driver)
+
+    await c.compile_worry(WORRY_ID)
+
+    worry, kinds, watcher = await load(store)
+    assert worry.status == "failed"  # not "parked": it could be watched, building failed
+    assert worry.resolution is not None
+    assert worry.resolution.startswith("Testing the watcher failed: the check could not get")
+    assert watcher is None and driver.live == set()
 
 
 async def test_status_error_on_the_dry_run_is_a_failure(store: Store) -> None:
@@ -235,11 +254,15 @@ async def test_person_and_social_worries_are_parked_without_codegen(
     assert [s for s, _ in llm.calls] == ["triage"]
 
 
-async def test_model_outage_parks_with_an_honest_reason(store: Store) -> None:
+async def test_model_outage_fails_naming_the_phase(store: Store) -> None:
     c, _ = compiler(store, ScriptedLLM([], []), ScriptedDriver())
     await c.compile_worry(WORRY_ID)
     worry, kinds, _ = await load(store)
-    assert (worry.status, worry.resolution) == ("parked", PARK_NO_MODEL)
+    assert worry.status == "failed"
+    assert worry.resolution == (
+        "Understanding it failed: the language model gave no usable answer. "
+        "Nothing was set up; you can try again."
+    )
 
 
 async def test_let_go_during_compile_is_never_revived(store: Store) -> None:

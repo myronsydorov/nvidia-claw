@@ -205,3 +205,53 @@ def test_approve_refuses_a_host_that_now_resolves_privately(
         assert "private or local" in response.json()["detail"]
         health = client.get("/api/health", headers=auth_headers).json()
         assert health["sandboxes_live"] == 0
+
+
+# --- S7 incident: build failures are `failed`, retryable, and not in the ledger --------------
+
+
+def test_retry_restarts_a_failed_build(
+    auth_headers: dict[str, str], warden_test_environment: str
+) -> None:
+    worry = _worry("failed", None) | {"resolution": "Testing the watcher failed: x."}
+    seed_worry(warden_test_environment, worry, timeline=[])
+    with TestClient(app) as client:
+        response = client.post(f"/api/worries/w_{WORRY_ULID}/retry", headers=auth_headers)
+        assert response.status_code == 200
+        detail = response.json()
+        assert detail["worry"]["status"] == "triaging"
+        assert detail["worry"]["resolution"] is None
+        assert detail["timeline"][-1]["kind"] == "retried"
+
+
+@pytest.mark.parametrize("status", ["parked", "watching", "awaiting_approval"])
+def test_only_a_failed_build_can_be_retried(
+    auth_headers: dict[str, str], warden_test_environment: str, status: str
+) -> None:
+    seed_worry(warden_test_environment, _worry(status, None), timeline=[])
+    with TestClient(app) as client:
+        response = client.post(f"/api/worries/w_{WORRY_ULID}/retry", headers=auth_headers)
+    assert response.status_code == 409
+
+
+def test_build_failures_are_not_counted_in_the_ledger(
+    auth_headers: dict[str, str], warden_test_environment: str
+) -> None:
+    db = warden_test_environment
+    ids = iter(f"01K6B8Z3Q4R5S6T7V8W9XA00{i:02d}" for i in range(10, 99))
+
+    def seed(status: str, kinds: list[str]) -> None:
+        worry = _worry(status, None) | {"id": f"w_{next(ids)}"}
+        events = [{"at": "2026-10-01T22:00:00Z", "kind": k, "text": "x"} for k in kinds]
+        seed_worry(db, worry, timeline=events)
+
+    seed("failed", ["created", "triaged", "failed"])  # a build failure
+    seed("parked", ["created", "triaged", "parked", "failed"])  # the marked S7 attempt
+    seed("resolved", ["created", "failed", "let_go"])  # a failure let go later
+    seed("watching", ["created", "approved"])
+    seed("watching", ["created", "approved", "failed"])  # paused after errors: was approved
+    seed("parked", ["created", "triaged", "parked"])  # worry time: a real worry
+    with TestClient(app) as client:
+        ledger = client.get("/api/ledger", headers=auth_headers).json()
+    assert ledger["worries_total"] == 3
+    assert ledger["active"] == 2

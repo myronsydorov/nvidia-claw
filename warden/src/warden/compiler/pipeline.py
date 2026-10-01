@@ -33,10 +33,31 @@ MAX_ATTEMPTS = 3  # the first try + 2 retries with the error fed back
 
 PARK_PERSON = "About a person: I'll offer a private check-in once reassurance is set up."
 PARK_WORRY_TIME = "Not something a watcher can settle, so I saved it for your weekly worry time."
-PARK_FAILED = "I couldn't build a watcher that works, so I've parked this rather than pretend."
-PARK_NO_MODEL = "I couldn't get a usable answer from the model to set this up, so I've parked it."
-PARK_BROKEN = "Something went wrong while setting this up, so I've parked it for now."
 
+# A build failure is not a parked worry (S7 incident): the worry could be watched, building
+# its watcher failed. It ends `failed`, with one plain sentence naming the phase that failed,
+# nothing set up (no watcher row, no sandbox), a retry offered, and it isn't counted in the
+# ledger. Our words only; never model output or watched content.
+FAIL_DRY_RUN_DETAIL = {
+    "run.py took longer": "the check took longer than a minute",
+    "the sandbox could not run": "its sandbox could not run it",
+    "run.py crashed": "the check crashed",
+    "run.py did not print": "the check gave no answer I could read",
+    "run.py reported that its check failed": "the check could not get its data",
+}
+
+
+def failure_sentence(phase: str, detail: str = "") -> str:
+    sentences = {
+        "understanding": "Understanding it failed: the language model gave no usable answer.",
+        "writing": "Writing the watcher failed: no version passed my safety checks.",
+        "lookup": "Looking it up failed: the stop search didn't answer.",
+        "testing": f"Testing the watcher failed: {detail or 'the test run did not pass'}.",
+    }
+    return (
+        sentences.get(phase, "Setting it up failed because something broke on my side.")
+        + " Nothing was set up; you can try again."
+    )
 
 @dataclass
 class CompileOutcome:
@@ -47,6 +68,8 @@ class CompileOutcome:
     attempts: int = 0
     problems: list[str] = field(default_factory=list)
     adapters: list[str] = field(default_factory=list)
+    phase: str = "understanding"  # where a failure would have happened
+    detail: str = ""  # the last dry-run failure, in our words
 
 
 @dataclass
@@ -99,13 +122,14 @@ class Compiler:
                 },
             )
             outcome.problems.append(str(exc))
-            await self._park(worry_id, ("triaging", "compiling"), PARK_NO_MODEL, outcome)
+            phase = outcome.phase if outcome.phase == "understanding" else "writing_model"
+            await self._fail(worry_id, outcome, phase)
         except Exception as exc:
             log.exception(
                 "compiler crashed", extra={"worry_id": worry_id, "error": type(exc).__name__}
             )
             outcome.problems.append(type(exc).__name__)
-            await self._park(worry_id, ("triaging", "compiling"), PARK_BROKEN, outcome)
+            await self._fail(worry_id, outcome, "broken")
         return outcome
 
     async def _compile(self, worry_id: str, outcome: CompileOutcome) -> None:
@@ -125,22 +149,23 @@ class Compiler:
             await self._park(worry_id, ("compiling",), PARK_WORRY_TIME, outcome)
             return
 
+        outcome.phase = "writing"
         messages = codegen.first_messages(text, t, self._clock())
-        last: _Attempt | None = None
         for attempt in range(1, MAX_ATTEMPTS + 1):
             outcome.attempts = attempt
             if not await self._still(worry_id, "compiling"):
                 return  # let go meanwhile; stop spending model calls
             answer = await self._llm.complete("codegen", messages)
             try:
-                feedback, candidate = await self._try(answer, text)
+                feedback, candidate = await self._try(answer, text, outcome)
+            except bvg_lookup.StopLookupError:
+                await self._fail(worry_id, outcome, "lookup")
+                return
             except codegen.MissingInput as missing:
                 # A URL or identifier the worry doesn't contain: retrying would only invent one.
                 outcome.problems.append(f"missing input for {missing.adapter}")
                 await self._park(worry_id, ("compiling",), missing.reason, outcome)
                 return
-            if candidate is not None:
-                last = candidate
             if feedback is None:
                 assert candidate is not None
                 outcome.adapters = [a.name for a in candidate.adapters]
@@ -149,9 +174,11 @@ class Compiler:
             outcome.problems.append(_headline(feedback))
             messages = codegen.retry_messages(messages, answer, feedback)
 
-        await self._park(worry_id, ("compiling",), PARK_FAILED, outcome, failed=last)
+        await self._fail(worry_id, outcome, outcome.phase, outcome.detail)
 
-    async def _try(self, answer: str, worry_text: str) -> tuple[str | None, _Attempt | None]:
+    async def _try(
+        self, answer: str, worry_text: str, outcome: CompileOutcome
+    ) -> tuple[str | None, _Attempt | None]:
         """(None, attempt) on success, else (feedback for the model, attempt-or-None).
 
         Raises codegen.MissingInput when the worry lacks what the watcher needs.
@@ -181,8 +208,12 @@ class Compiler:
         problem = await hosts.non_public_host((e.host, e.port) for e in endpoints)
         if problem is not None:
             return "Problem:\n" + guard.untrusted(problem, "checker", max_chars=300), candidate
+        outcome.phase = "testing"
         result = await dry_run(self._driver, built.adapters, built.code)
         if not result.ok:
+            outcome.detail = next(
+                (v for k, v in FAIL_DRY_RUN_DETAIL.items() if result.problem.startswith(k)), ""
+            )
             return guard.dry_run_feedback(result.exec_result, result.problem), candidate
         return None, candidate
 
@@ -238,24 +269,46 @@ class Compiler:
         await self._events.publish("worry.updated", {"worry_id": worry_id})
         await self._events.publish("approval.needed", {"worry_id": worry_id})
 
+    async def _fail(
+        self, worry_id: str, outcome: CompileOutcome, phase: str, detail: str = ""
+    ) -> None:
+        """A build failure: `failed`, the phase in one sentence, no watcher saved."""
+        if phase == "writing_model":
+            reason = failure_sentence("writing").replace(
+                "no version passed my safety checks", "the language model gave no usable answer"
+            )
+        else:
+            reason = failure_sentence(phase, detail)
+        async with self._store.write_lock:
+            loaded = await self._load(worry_id)
+            if loaded is None or loaded[0].status not in ("triaging", "compiling"):
+                return
+            worry, timeline = loaded
+            now = self._clock()
+            worry.status = "failed"
+            worry.resolution = reason
+            worry.updated_at = now
+            timeline.append(TimelineEvent(at=now, kind="failed", text=reason[:140]))
+            await save_worry(self._store, worry, timeline)
+            outcome.status = "failed"
+        log.warning(
+            "compile failed",
+            extra={"worry_id": worry_id, "phase": phase, "problems": outcome.problems[-3:]},
+        )
+        await self._events.publish("worry.updated", {"worry_id": worry_id})
+
     async def _park(
         self,
         worry_id: str,
         from_statuses: tuple[WorryStatus, ...],
         reason: str,
         outcome: CompileOutcome,
-        failed: _Attempt | None = None,
     ) -> None:
         async with self._store.write_lock:
             loaded = await self._load(worry_id)
             if loaded is None or loaded[0].status not in from_statuses:
                 return
             worry, timeline = loaded
-            if failed is not None:
-                # Kept for inspection only; it never gets a sandbox.
-                watcher = self._watcher(worry.id, failed, "dry_run_failed")
-                await save_watcher(self._store, watcher)
-                worry.watcher_id = watcher.id
             now = self._clock()
             worry.status = "parked"
             worry.resolution = reason
