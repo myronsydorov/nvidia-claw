@@ -172,6 +172,17 @@ All `/api/*` routes, including `/api/health`, require the bearer device token; a
 `custody.hand_over(text)`, `custody.list(status?)`, `custody.get(id)`, `custody.let_go(id)`, `custody.record_outcome(id, came_true)`, `custody.ask_peer(peer_id, q)`, `custody.ledger()`.
 The brain **cannot** approve policies. Approval only ever comes from the human, in the app.
 
+**Transport (T-11):** an MCP server named `custody`, mounted on the Warden at **`/mcp/`** (Streamable
+HTTP, stateless, JSON responses), with tools `hand_over`, `list`, `get`, `let_go`,
+`record_outcome`, `ask_peer`, `ledger` (the dotted names above are `server.tool`). Auth: bearer
+`WARDEN_MCP_TOKEN`, which must differ from the device token (`/mcp/` answers `401` without it).
+Host headers outside loopback and `WARDEN_MCP_ALLOWED_HOSTS` get `421`. Each tool dispatches
+in-process to the matching `/api` route, and ids must match `w_<ulid>` / `p_<ulid>` exactly.
+Output: Worry fields plus the watcher's `adapters`, `permissions` (PermissionLine list), `state`,
+`interval_s` and `last_result`. `last_result` passes through `guard.guard_watch_result`
+(`evidence.data` dropped). Timeline texts and `resolution` are wrapped as `<untrusted_data>`.
+Watcher `code` and `policy_yaml` are never returned.
+
 ## 5. Ledger (`GET /api/ledger`)
 `{ worries_total, active, never_needed_you, needed_you, median_warning_lead_h, came_true_rate, came_true_by_type{}, watchers_built, sandboxes_live, endpoints_denied, peer_questions_answered, locations_shared: 0 }` (`peer_questions_answered` = entries in my question log)
 

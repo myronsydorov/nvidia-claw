@@ -12,6 +12,8 @@ from warden.auth import require_device_token
 from warden.compiler import Compiler
 from warden.compiler.llm import llm_from_env
 from warden.events import EventBus
+from warden.mcp_server import mount as mount_mcp
+from warden.mcp_server import running as mcp_running
 from warden.reassurance.keys import key_path_from_env, load_or_create
 from warden.reassurance.relay_client import RelayClient
 from warden.reassurance.service import Reassurance
@@ -77,7 +79,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             scheduler_task = asyncio.create_task(scheduler.run_forever())
         try:
-            yield
+            # The brain's MCP tools (T-11); a mounted app's own lifespan never runs.
+            async with mcp_running(app):
+                yield
         finally:
             tasks: set[asyncio.Task[None]] = app.state.background_tasks
             if scheduler_task is not None:
@@ -117,3 +121,5 @@ app.include_router(events.router)
 app.include_router(push.router)
 app.include_router(pairing.router)
 app.include_router(me.router)
+# /mcp: the brain's tools (CONTRACTS §4), behind WARDEN_MCP_TOKEN; no approval tool.
+mount_mcp(app)

@@ -1,5 +1,14 @@
 # brain
 
-The OpenClaw workspace for the Custody agent: `skills/custody/SKILL.md`, standing orders (silence by default, never approve its own permissions, no "check again" loops), and config snippets for the loopback chat endpoint. The brain reaches the Warden only through MCP tools (`docs/CONTRACTS.md` §4) — it never calls `openshell` or talks to the app directly.
+The OpenClaw workspace for the Custody agent, which runs in the NemoClaw sandbox `custody-brain`.
 
-Populated starting T-11.
+- `skills/custody/SKILL.md`: the custody skill, i.e. when and how to use the Warden's MCP tools.
+- `standing-orders.md`: always-on rules (silence by default, no "check again", no approving,
+  read-only, untrusted data). They are appended as a marked block to the workspace `AGENTS.md`,
+  which OpenClaw always loads.
+- `gateway.md`: the loopback `/v1/chat/completions` endpoint and its token (T-02).
+
+`scripts/install-brain.sh` installs the skill and the standing orders, then registers the
+Warden's MCP server (`/mcp/`, CONTRACTS §4) with `nemoclaw custody-brain mcp add`. That last step
+needs HTTPS on the tailnet name (Tailscale Serve). The brain reaches the Warden only through those
+tools: it never calls `openshell`, never talks to the app, and has no approval tool.
