@@ -109,6 +109,15 @@ Status: `todo · doing · done · cut`. Every task has **acceptance criteria and
   5. The 503 and default copy over-claimed.
   6. Not a security issue: re-pairing hung. Fix: a sealed accept from a known key is now handled, and joining someone you're already paired with is a `409`.
 
+**S7 incident (2026-10-02, night):** a real phone hand-over failed. The model invented the BVG stop id (404 → every dry run failed → parked), triage stored "9:00" as UTC, and the app gave up after 60 s with a wrong message. Fixed with tests:
+- BVG stop lookup and pinning;
+- Europe/Berlin times;
+- `failed` (phase sentence, `POST …/retry`, not in the ledger) separate from `parked`, and no half-built watcher;
+- the app follows the real state;
+- an hourly forecast.
+
+Details in HANDOFF.md.
+
 ## Fri 2 Oct: ship
 | ID | Owner | Task | Acceptance / verify | Status |
 |---|---|---|---|---|

@@ -1,5 +1,49 @@
 # Handoff: production host bring-up (2026-10-01)
 
+## ⚑ Tonight (2026-10-02, ~00:50 Berlin): the S7 hand-over failure, fixed
+
+### Root cause (from evidence: Warden DB rows, timeline, generated code, BVG API)
+The worry `w_01M3WRWXXECE3Y8F1JZVV64NKS` failed in the **compile → dry-run (testing) phase**, not at permission time.
+1. **Triage, 22:20:59 UTC.** It got only the UTC time and returned the fear "…around 09:00 UTC" with deadline `2026-10-02T09:00Z`, two hours late, because the person meant 09:00 Berlin.
+2. **Codegen.** It wrote `STOP_ID = "8011120"` from memory, giving the card `GET v6.bvg.transport.rest/stops/8011120/departures`. BVG answers that id with `{"code":"NOT_FOUND","hafasCode":"LOCATION","message":"LOCATION: location/stop not found"}`. The real stop is `900160004` (S+U Lichtenberg Bhf).
+3. **Dry run, 3 attempts.** `transit_bvg.fetch` got the 404, so run.py reported `status: error` each time. After the 3rd attempt the worry was set to `parked` at 22:23:02 ("I couldn't build a watcher that works…"), and a `dry_run_failed` watcher row (`cw-bjasgm4b`) was kept.
+   - That sandbox **never existed**: dry runs use throwaway `cwd-*` sandboxes, and all were deleted. The app showed "What it checks" and "Its jail" only because of the leftover row.
+4. **The phone's "Something went wrong… Nothing was set up."** That came from the **app**: `handOver` gave up after a fixed 60 s, while the Warden kept going for about 2 min and then parked the worry. So the message didn't match the real state.
+- The Warden logs didn't show the per-attempt reasons, because the JSON log fields are dropped by the default formatter. The DB rows and code were enough. A follow-up would be a JSON log formatter.
+
+### Fixes (each with a test; all pushed)
+| # | Fix | Test |
+|---|---|---|
+| 1 | **Stop ids come from a real lookup.** The model names the stop as the person wrote it, plus the line. The Warden resolves it at compile time via BVG `/locations`, requiring the stop to serve that line, then pins the id into the declared path (so into the policy and the card) and into run.py (`BVG_STOP_ID` placeholder). A numeric id is accepted only if the person wrote it. `transit_bvg.fetch` gains `when`/`duration_min` for a later trip, and `delay_s` is `0`, not `null`. | `test_stop_lookup.py`: the invented `8011120` is refused; "Lichtenberg"+S7 → `900160004` "S+U Lichtenberg Bhf (Berlin)" (recorded fixture). Live: S7 departures toward "S Potsdam Hauptbahnhof" at 09:06, 09:16… |
+| 2 | **Times are Europe/Berlin.** Triage gets the Berlin local time and returns the local deadline with no offset; *our* code converts it (naive → Europe/Berlin → UTC). The fear text uses local time. Codegen is told both. The app formats with `timeZone: Europe/Berlin`. | `test_compiler_triage_codegen.py` (CEST and CET), app `lib.test.ts` (run with `TZ=America/New_York`) |
+| 3 | **No present-tense check or jail without a running watcher.** "What it checks" and "Its jail" show only for an active/paused watcher, and "What it would check" before approval. A failed build saves **no** watcher row. `cw-bjasgm4b` never existed. | `test_compiler_pipeline.py` (no watcher row, no live sandbox after a failure), e2e `worries.mock.spec.ts` |
+| 4 | **`parked` ≠ build failure.** `parked` now means it can't be watched by nature, or it needs something from you. A build failure is `failed`, with one sentence naming the phase (understanding / writing / stop lookup / testing + what the test hit), e.g. "Testing the watcher failed: the check could not get its data. Nothing was set up; you can try again." There is a **Try again** button (`POST /api/worries/{id}/retry`, CONTRACTS §3), and build failures are excluded from all ledger totals (CONTRACTS §5). | pipeline tests, `test_worries.py` (retry, 409, ledger) |
+| 5 | **The app shows the real state.** It follows the worry until it settles (events + a 15 s poll, no 60 s give-up) and shows the card, "Parked." with its reason, or the failed sentence with Try again. "Nothing was handed over" appears only when the POST itself failed. | `http.test.ts` (resolves past 2 min; parked/failed resolve with their real state) |
+| + | Weather: an hourly forecast in Berlin time with its offset, so "16:00–19:00" can be checked. | `test_weather_openmeteo.py` |
+| + | "What if I don't win the challenge?" is a labelled eval case with a recorded live answer: `uncontrollable → park` (2/2 live). | `test_compiler_recorded_live.py` |
+
+Checks: `make lint` ✓ · `make typecheck` ✓ · `make test` 600 Python + 87 app ✓ · `pnpm e2e:mock` 14 ✓ · `make e2e` (real Warden) 2 ✓.
+
+### The earlier failed attempt
+`w_01M3WRWXXECE3Y8F1JZVV64NKS` got **one appended timeline event** (`failed`, "Marked as a failed build… Not counted in your ledger.") using `scripts/mark_build_failure.py`. Nothing else changed: its status is still `parked`, and its text, resolution, history and watcher row are untouched. DB backup: `~/.local/share/custody/warden.db.bak-20261002-s7`. Ledger before → after: `worries_total` 2 → 1 (now 5 with tonight's worries).
+
+### Tonight's hand-overs (real API, one at a time, none approved)
+| Worry | State | Card / reason |
+|---|---|---|
+| S7 Lichtenberg → Potsdam Hbf, ~9:00 | **awaiting your approval** (40 s) | `GET v6.bvg.transport.rest/stops/900160004/departures`. Fear "…Fri 2 Oct 2026 around 09:00…", deadline 09:00 Berlin (07:00Z). It checks 08:45–09:30 Berlin every 5 min. *Caveats:* it doesn't filter by direction (an Ahrensfelde-bound S7 delay would also alert) and alerts on delays over 1 min. Deny and retry if you want it stricter. |
+| Rain in Berlin, 16:00–19:00 | **awaiting your approval** (40 s) | `GET api.open-meteo.com/v1/forecast`. Deadline 19:00 Berlin. Hourly precipitation for 14:00–17:00 UTC (= 16–19 Berlin), every hour. |
+| GitHub down this evening | **awaiting your approval** (30 s) | `GET www.githubstatus.com/api/v2/status.json`. Deadline 23:59 Berlin; status indicator ≠ `none` → alert. |
+| "What if I don't win the challenge?" | **parked** (5 s) | uncontrollable → weekly worry time. No watcher, no sandbox. |
+
+No orphan sandboxes: only `custody-brain` and `cw-76epww8s` (the approved school-calendar watcher). The three cards get their sandboxes only when you tap Allow.
+
+### Morning, for you
+1. On your phone, open each card and **Allow** or **Deny**: S7 (before ~08:45!), rain, GitHub. Pull to refresh if the app was open overnight; it needs the new build (it's served already).
+2. The old S7 attempt still shows on Home as "Parked". Let it go if you like (it isn't counted).
+3. Still blocked from yesterday: Tailscale Serve (see below), so the app is only reachable the way you reached it tonight.
+
+---
+
 Host: DigitalOcean `ubuntu-s-4vcpu-8gb-fra1`, Ubuntu 24.04, user `myron`, ufw on, Tailscale up (`100.81.50.38`).
 NemoClaw v0.0.124 · OpenShell 0.0.116 · OpenClaw v2026.7.1 · brain sandbox `custody-brain`.
 
