@@ -1,0 +1,16 @@
+[Unit]
+Description=Custody relay: ciphertext-only mailbox (loopback; T-14)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/nvidia-claw
+# Keep the DB across restarts: message ids restart if it is deleted (PLAN T-14 note).
+Environment=RELAY_DB_PATH=%h/.local/share/custody/relay.db
+ExecStartPre=/usr/bin/mkdir -p %h/.local/share/custody
+ExecStart=%h/nvidia-claw/.venv/bin/uvicorn relay.app:app --host 127.0.0.1 --port 8100 --no-access-log
+Restart=always
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=default.target

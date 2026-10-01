@@ -1,0 +1,21 @@
+[Unit]
+Description=Custody Warden: app API, compiler, scheduler, OpenShell watchers (loopback)
+After=network-online.target nemoclaw-openshell-gateway.service custody-relay.service
+Wants=nemoclaw-openshell-gateway.service custody-relay.service
+
+[Service]
+WorkingDirectory=%h/nvidia-claw
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Later files override earlier ones: .env (NVIDIA key, models), then the gateway token, then
+# this host's settings (CUSTODY_SANDBOX=openshell, device token, paths). All outside git, 0600.
+EnvironmentFile=-%h/nvidia-claw/.env
+EnvironmentFile=%h/.config/custody/gateway.env
+EnvironmentFile=%h/.config/custody/warden.env
+ExecStartPre=/usr/bin/mkdir -p %h/.local/share/custody
+ExecStart=%h/nvidia-claw/.venv/bin/uvicorn warden.app:app --host 127.0.0.1 --port 8000 --no-access-log
+Restart=always
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=default.target
