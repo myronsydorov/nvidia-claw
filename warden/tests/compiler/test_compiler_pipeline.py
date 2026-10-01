@@ -92,6 +92,9 @@ class ScriptedDriver:
     async def delete(self, name: str) -> None:
         self.live.remove(name)
 
+    async def ensure_running(self, name: str) -> bool:
+        return name in self.live
+
 
 @pytest.fixture
 async def store(warden_test_environment: str) -> AsyncIterator[Store]:

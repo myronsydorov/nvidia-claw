@@ -72,12 +72,34 @@ class Scheduler:
         self._exec_timeout_s = exec_timeout_s
 
     async def run_forever(self, poll_s: float = 30.0) -> None:
+        await self.reconcile()
         while True:
             try:
                 await self.tick()
             except Exception:
                 log.exception("scheduler tick failed")
             await asyncio.sleep(poll_s)
+
+    async def reconcile(self) -> None:
+        """Recovery after a reboot (T-20): every active or paused watcher gets its sandbox back,
+        started if it was stopped, recreated from the stored, approved policy and code if it
+        is gone. Nothing is widened: it is the same generated policy the person approved."""
+        for state in ("active", "paused"):
+            for data in await self._store.watchers.query(state=state):
+                try:
+                    watcher = Watcher.model_validate(data)
+                    if await self._driver.ensure_running(watcher.sandbox_name):
+                        continue
+                    await self._driver.create(watcher.sandbox_name, image="watcher-base")
+                    await self._driver.apply_policy(watcher.sandbox_name, watcher.policy_yaml)
+                    await self._driver.write_file(watcher.sandbox_name, RUN_PATH, watcher.code)
+                    log.info("sandbox recreated", extra={"watcher_id": watcher.id})
+                except Exception as exc:
+                    # The next run errors and, after three, pauses with one notification.
+                    log.error(
+                        "sandbox recovery failed",
+                        extra={"watcher_id": data.get("id"), "error": type(exc).__name__},
+                    )
 
     async def tick(self) -> None:
         """One pass: auto-resolve past-deadline worries, then run every due active watcher."""

@@ -47,15 +47,22 @@ class FakeDriver:
         self.execs: list[str] = []
         self.deleted: list[str] = []
         self.on_exec: Any = None
+        self.present = True  # what ensure_running finds after a "reboot"
+        self.calls: list[tuple[str, str, str]] = []  # (op, name, payload) for reconcile tests
 
     async def create(self, name: str, image: str) -> SandboxHandle:
+        self.calls.append(("create", name, image))
         return SandboxHandle(name=name, status="ready")
 
     async def apply_policy(self, name: str, policy_yaml: str) -> None:
-        return None
+        self.calls.append(("apply_policy", name, policy_yaml))
 
     async def write_file(self, name: str, path: str, content: str) -> None:
-        return None
+        self.calls.append(("write_file", name, f"{path}:{content}"))
+
+    async def ensure_running(self, name: str) -> bool:
+        self.calls.append(("ensure_running", name, ""))
+        return self.present
 
     async def exec(self, name: str, command: list[str]) -> ExecResult:
         self.execs.append(name)
@@ -412,3 +419,36 @@ async def test_evidence_is_bounded_before_it_is_stored(h: Harness) -> None:
     assert last is not None
     assert len(last.evidence.source) == 64
     assert last.evidence.data == {"truncated": True}
+
+
+# --- T-20: recovery after a reboot -------------------------------------------------------
+
+
+async def test_reconcile_restarts_a_stopped_sandbox_without_rebuilding_it(h: Harness) -> None:
+    await h.scheduler.reconcile()
+    assert h.driver.calls == [("ensure_running", SANDBOX, "")]
+
+
+async def test_reconcile_recreates_a_missing_sandbox_from_the_approved_policy(h: Harness) -> None:
+    h.driver.present = False
+    await h.scheduler.reconcile()
+    watcher = await h.watcher()
+    assert h.driver.calls == [
+        ("ensure_running", SANDBOX, ""),
+        ("create", SANDBOX, "watcher-base"),
+        ("apply_policy", SANDBOX, watcher.policy_yaml),
+        ("write_file", SANDBOX, f"/w/run.py:{watcher.code}"),
+    ]
+
+
+async def test_reconcile_leaves_retired_watchers_alone(h: Harness) -> None:
+    watcher = await h.watcher()
+    watcher.state = "retired"
+    await save_watcher(h.store, watcher)
+    await h.scheduler.reconcile()
+    assert h.driver.calls == []
+
+
+async def test_every_run_restores_the_approved_code_first(h: Harness) -> None:
+    await h.run(result("ok"))
+    assert ("write_file", SANDBOX, "/w/run.py:") in h.driver.calls

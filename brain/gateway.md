@@ -17,5 +17,7 @@ t=$(nemoclaw custody-brain gateway-token --quiet | tail -1)
 printf 'OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789\nOPENCLAW_GATEWAY_TOKEN=%s\n' "$t" > ~/.config/custody/gateway.env
 unset t
 ```
+`scripts/refresh-gateway-token.sh` does exactly this. **The token rotates whenever the brain
+sandbox restarts**, so `scripts/restart.sh` runs it before restarting the Warden.
 Only the Warden reads it (systemd `EnvironmentFile=`). `scripts/check-gateway.sh` proves a loopback
 completion, a 401 without the token, and that every non-loopback address refuses the port.

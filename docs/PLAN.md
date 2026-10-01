@@ -110,10 +110,12 @@ Status: `todo · doing · done · cut`. Every task has **acceptance criteria and
 ## Fri 2 Oct: ship
 | ID | Owner | Task | Acceptance / verify | Status |
 |---|---|---|---|---|
-| T-20 | Claude | `scripts/restart.sh`, error and empty states, recovery after a reboot | Reboot the Brev machine → `restart.sh` → healthy within 5 minutes | todo |
+| T-20 | Claude | `scripts/restart.sh`, error and empty states, recovery after a reboot | Reboot the Brev machine → `restart.sh` → healthy within 5 minutes | doing (restart.sh + recovery done‡‡‡; app error/empty states not started) |
 | T-21 | Claude | README: pitch, diagram, quickstart, security model, honest limits | A fresh reader can run `make dev` from the README alone | todo |
 | T-22 | You + Claude | `/demo-check`, then **record the video by 18:00** | Checklist all green | todo |
 | T-23 | You | **Submit by 20:00** | Confirmation received | todo |
+
+‡‡‡ T-20 (2026-10-01, DigitalOcean host): `scripts/restart.sh` brings back docker → `nemoclaw-openshell-gateway` (user service) → the brain sandbox (`nemoclaw start`, then `recover` if 18789 doesn't answer) → refreshes the gateway token (**it rotates on every brain restart**: `scripts/refresh-gateway-token.sh`) → `custody-relay`/`custody-app`/`custody-warden` (systemd user units in `deploy/systemd/`, linger on, installed by `scripts/install-services.sh`) → checks. The Warden's scheduler reconciles watcher sandboxes on start (`Scheduler.reconcile`: `sandbox start` if stopped, recreate from the approved policy + code if gone; tested). Evidence: with every component stopped (no containers, no listeners), `restart.sh` → **HEALTHY in 95 s** (budget 300 s), watcher sandbox back to Ready. A real `reboot` was not run while the owner was away.
 
 ## Cut lines (in this order, if behind)
 1. Voice input → text only.

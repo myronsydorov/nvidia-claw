@@ -52,3 +52,6 @@ class MockDriver:
 
     async def delete(self, name: str) -> None:
         del self._sandboxes[name]
+
+    async def ensure_running(self, name: str) -> bool:
+        return name in self._sandboxes

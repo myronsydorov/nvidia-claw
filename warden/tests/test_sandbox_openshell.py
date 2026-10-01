@@ -221,3 +221,9 @@ def test_a_cancelled_exec_kills_the_cli(tmp_path: Path) -> None:
             await asyncio.wait_for(driver.exec("cw-abc123", ["x"]), timeout=0.5)
 
     asyncio.run(run())
+
+
+def test_ensure_running_reports_ready_sandboxes(fake: tuple[OpenShellDriver, Path]) -> None:
+    driver, log = fake
+    assert asyncio.run(driver.ensure_running("cw-abc123")) is True
+    assert [c["args"][:2] for c in _calls(log)] == [["sandbox", "get"]]

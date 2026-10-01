@@ -235,6 +235,22 @@ class OpenShellDriver:
         if out.exit_code != 0 and "not found" not in (out.stdout + out.stderr).lower():
             raise OpenShellError(f"openshell sandbox delete exited {out.exit_code}")
 
+    async def ensure_running(self, name: str) -> bool:
+        """Containers don't restart with the host, but OpenShell keeps the sandbox (policy and
+        /w included): `sandbox start` brings it back in about a second (T-20)."""
+        _check_name(name)
+        phase = await self._phase(name)
+        if phase is None:
+            return False
+        if phase != "Ready":
+            await self._run("sandbox", "start", name)
+            started = time.monotonic()
+            while (phase := await self._phase(name)) != "Ready":
+                if time.monotonic() - started > READY_TIMEOUT_S:
+                    raise OpenShellError(f"sandbox {name} did not come back (phase {phase})")
+                await asyncio.sleep(0.25)
+        return True
+
     async def denials(self, name: str, since: str = "1h") -> list[str]:
         """OpenShell's own log lines for egress it denied in this sandbox (OCSF `DENIED`).
 
