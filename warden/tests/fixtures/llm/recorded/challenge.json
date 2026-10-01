@@ -1,0 +1,10 @@
+{
+  "text": "What if I don't win the challenge?",
+  "fear": "not winning the challenge",
+  "answers": [
+    {
+      "stage": "triage",
+      "content": "{\"type\": \"uncontrollable\", \"fear\": \"not winning the challenge\", \"deadline\": null, \"route\": \"park\", \"signal\": \"\"}"
+    }
+  ]
+}

@@ -36,3 +36,6 @@
 - id: illness
   text: "What if I get seriously ill someday?"
   route: park
+- id: challenge
+  text: "What if I don't win the challenge?"
+  route: park
