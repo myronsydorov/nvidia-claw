@@ -8,6 +8,9 @@ describe("router", () => {
 			{ name: "home" },
 			{ name: "hand-over", text: "Will it rain? & more" },
 			{ name: "worry", id: "w_01K6B8Z3Q4R5S6T7V8W9XA0001" },
+			{ name: "people" },
+			{ name: "sharing" },
+			{ name: "ledger" },
 		] as const) {
 			expect(parseHash(href(r))).toEqual(r);
 		}

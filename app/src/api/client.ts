@@ -6,9 +6,24 @@ import {
 	iso,
 	pickTemplate,
 } from "../mocks/fixtures";
+import {
+	initialLedger,
+	initialPeople,
+	initialQuestionLog,
+	initialRules,
+	mockAnswer,
+} from "../mocks/people";
 import { createEventStream, type Listener } from "./events";
 import { createHttpApi } from "./http";
 import {
+	type AskPeerResponse,
+	askPeerResponseSchema,
+	type LedgerResponse,
+	type PeopleListItem,
+	peopleListItemSchema,
+	type ReassuranceQuestion,
+	type SharingRulesResponse,
+	sharingRulesResponseSchema,
 	type WorryDetail,
 	type WorrySummary,
 	worryDetailSchema,
@@ -25,6 +40,15 @@ export interface Api {
 	approve(id: string): Promise<WorryDetail>;
 	deny(id: string): Promise<WorryDetail>;
 	letGo(id: string): Promise<WorryDetail>;
+	/** Paired people and their last answer (GET /api/people). */
+	listPeople(): Promise<PeopleListItem[]>;
+	/** Ask a paired person's Warden a fixed-vocabulary question. */
+	ask(peerId: string, q: ReassuranceQuestion): Promise<AskPeerResponse>;
+	/** What others may ask about me, plus the log of what they asked. */
+	getSharingRules(): Promise<SharingRulesResponse>;
+	/** Replaces the full rules list; the log is server-maintained. */
+	putSharingRules(body: SharingRulesResponse): Promise<SharingRulesResponse>;
+	getLedger(): Promise<LedgerResponse>;
 	/** Live updates (GET /api/events). Returns an unsubscribe function. */
 	subscribe(listener: Listener): () => void;
 }
@@ -41,6 +65,12 @@ export function createMockApi(latencyMs = 250): Api {
 		if (!d) throw new Error(`unknown worry ${id}`);
 		return d;
 	}
+
+	let people = initialPeople();
+	let sharing: SharingRulesResponse = {
+		rules: initialRules(),
+		questions_log: initialQuestionLog(),
+	};
 
 	const listeners = new Set<Listener>();
 	function changed(id: string) {
@@ -123,6 +153,44 @@ export function createMockApi(latencyMs = 250): Api {
 				d.timeline.push({ at: now, kind: "let_go", text: "You let it go." });
 				return d;
 			});
+		},
+		async listPeople() {
+			await wait(latencyMs);
+			return peopleListItemSchema.array().parse(people);
+		},
+		async ask(peerId, q) {
+			// A round trip through the relay to the peer's Warden and back.
+			await wait(latencyMs * 3.6);
+			if (!people.some((p) => p.peer.id === peerId)) {
+				throw new Error(`unknown peer ${peerId}`);
+			}
+			const res = askPeerResponseSchema.parse(mockAnswer(q));
+			people = people.map((p) =>
+				p.peer.id === peerId
+					? { ...p, last_answer: res.answer, last_answer_at: res.answer.ts }
+					: p,
+			);
+			for (const l of [...listeners]) {
+				l({ type: "peer.answer", data: { peer_id: peerId, q } });
+			}
+			return res;
+		},
+		async getSharingRules() {
+			await wait(latencyMs);
+			return sharingRulesResponseSchema.parse(sharing);
+		},
+		async putSharingRules(body) {
+			await wait(latencyMs);
+			// Like the Warden: only `rules` is replaced; the log is read-only.
+			sharing = sharingRulesResponseSchema.parse({
+				rules: structuredClone(body.rules),
+				questions_log: sharing.questions_log,
+			});
+			return sharing;
+		},
+		async getLedger() {
+			await wait(latencyMs);
+			return initialLedger();
 		},
 		subscribe(listener) {
 			listeners.add(listener);

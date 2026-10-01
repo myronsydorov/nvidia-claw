@@ -2,7 +2,11 @@ import type { z } from "zod";
 import type { Api } from "./client";
 import type { EventStream } from "./events";
 import {
+	askPeerResponseSchema,
 	healthResponseSchema,
+	ledgerResponseSchema,
+	peopleListItemSchema,
+	sharingRulesResponseSchema,
 	type WorryDetail,
 	worryDetailSchema,
 	worrySchema,
@@ -36,7 +40,7 @@ export function createHttpApi(opts: HttpApiOptions): Api {
 	const doFetch = opts.fetchImpl ?? ((...a) => fetch(...a));
 
 	async function request<S extends z.ZodType>(
-		method: "GET" | "POST",
+		method: "GET" | "POST" | "PUT",
 		path: string,
 		schema: S,
 		body?: unknown,
@@ -120,6 +124,20 @@ export function createHttpApi(opts: HttpApiOptions): Api {
 		approve: (id) => post(id, "approve"),
 		deny: (id) => post(id, "deny"),
 		letGo: (id) => post(id, "let-go"),
+		listPeople: () =>
+			request("GET", "/api/people", peopleListItemSchema.array()),
+		ask: (peerId, q) =>
+			request(
+				"POST",
+				`/api/people/${encodeURIComponent(peerId)}/ask`,
+				askPeerResponseSchema,
+				{ q },
+			),
+		getSharingRules: () =>
+			request("GET", "/api/sharing-rules", sharingRulesResponseSchema),
+		putSharingRules: (body) =>
+			request("PUT", "/api/sharing-rules", sharingRulesResponseSchema, body),
+		getLedger: () => request("GET", "/api/ledger", ledgerResponseSchema),
 		subscribe: (listener) => opts.events.subscribe(listener),
 	};
 }
