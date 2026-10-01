@@ -218,6 +218,75 @@ function parkedDetail(now: number): WorryDetail {
 	});
 }
 
+// The S7 incident's shape, before the fix: parked, but with a leftover dry_run_failed watcher.
+// The app must show no present-tense check and no jail for it.
+function legacyParkedBuildDetail(now: number): WorryDetail {
+	const created = iso(-90 * MIN, now);
+	const text = "What if the S7 is disrupted around 9:00 from Lichtenberg?";
+	return worryDetailSchema.parse({
+		worry: {
+			id: `w_${mockUlid()}`,
+			text,
+			type: "checkable",
+			fear: "S7 from Lichtenberg disrupted around 09:00",
+			deadline: iso(9 * 60 * MIN, now),
+			status: "parked",
+			watcher_id: `wt_${mockUlid()}`,
+			resolution:
+				"I couldn't build a watcher that works, so I've parked this rather than pretend.",
+			fear_came_true: null,
+			created_at: created,
+			updated_at: created,
+		},
+		watcher: {
+			id: `wt_${mockUlid()}`,
+			worry_id: `w_${mockUlid()}`,
+			adapters: ["transit_bvg"],
+			code: "",
+			policy_yaml: "",
+			policy_summary: [
+				{
+					method: "GET",
+					host: "v6.bvg.transport.rest",
+					path: "/stops/8011120/departures",
+					why: "check departures for this stop",
+				},
+			],
+			sandbox_name: "cw-bjasgm4b",
+			interval_s: 300,
+			state: "dry_run_failed",
+			last_result: null,
+		},
+		timeline: [{ at: created, kind: "created", text: "You handed it over." }],
+	});
+}
+
+function failedBuildDetail(now: number): WorryDetail {
+	const created = iso(-30 * MIN, now);
+	const resolution =
+		"Testing the watcher failed: the check could not get its data. Nothing was set up; you can try again.";
+	return worryDetailSchema.parse({
+		worry: {
+			id: `w_${mockUlid()}`,
+			text: "What if the U5 is late tonight?",
+			type: "checkable",
+			fear: "U5 late tonight",
+			deadline: null,
+			status: "failed",
+			watcher_id: null,
+			resolution,
+			fear_came_true: null,
+			created_at: created,
+			updated_at: created,
+		},
+		watcher: null,
+		timeline: [
+			{ at: created, kind: "created", text: "You handed it over." },
+			{ at: created, kind: "failed", text: resolution.slice(0, 140) },
+		],
+	});
+}
+
 export function initialDetails(now: number = Date.now()): WorryDetail[] {
 	return [
 		buildDetail(
@@ -251,6 +320,8 @@ export function initialDetails(now: number = Date.now()): WorryDetail[] {
 			},
 		),
 		parkedDetail(now),
+		legacyParkedBuildDetail(now),
+		failedBuildDetail(now),
 	];
 }
 

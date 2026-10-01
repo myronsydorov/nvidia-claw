@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { WorryDetail } from "../api/schemas";
 import { PermissionCard } from "../components/PermissionCard";
-import { BackLink, Orb, Screen } from "../components/ui";
+import { BackLink, Button, Orb, Screen } from "../components/ui";
 import { navigate } from "../lib/router";
 
 const STEPS = [
@@ -14,7 +14,18 @@ const STEPS = [
 const STEP_MS = 1400;
 const DONE_MS = 2600;
 
-type Phase = "steps" | "permission" | "allowed" | "denied" | "error";
+// How the hand-over ended, from the Warden's real state (S7 incident: the app once said
+// "nothing was set up" while the Warden was still building, then parked it).
+type Phase =
+	| "steps"
+	| "permission"
+	| "parked"
+	| "failed"
+	| "unreachable" // the POST itself failed: truly nothing was handed over
+	| "decide_error" // Allow/Deny didn't go through
+	| "allowed"
+	| "denied";
+const SLOW_MS = 60_000;
 
 function StepRow({
 	label,
@@ -77,7 +88,17 @@ export function HandOver({ text }: { text: string }) {
 	const [phase, setPhase] = useState<Phase>("steps");
 	const [detail, setDetail] = useState<WorryDetail | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [slow, setSlow] = useState(false);
 	const started = useRef(false);
+
+	const settle = useCallback((d: WorryDetail) => {
+		setDetail(d);
+		const s = d.worry.status;
+		if (s === "awaiting_approval" && d.watcher) return; // the steps hand over to the card
+		if (s === "parked") setPhase("parked");
+		else if (s === "failed") setPhase("failed");
+		else navigate({ name: "worry", id: d.worry.id }); // let go or decided elsewhere
+	}, []);
 
 	// Hand over exactly once (StrictMode runs effects twice; the ref survives).
 	useEffect(() => {
@@ -87,8 +108,15 @@ export function HandOver({ text }: { text: string }) {
 		}
 		if (started.current) return;
 		started.current = true;
-		api.handOver(text).then(setDetail, () => setPhase("error"));
-	}, [text]);
+		api.handOver(text).then(settle, () => setPhase("unreachable"));
+	}, [text, settle]);
+
+	// Building can take minutes: say so, never give up on the person's behalf.
+	useEffect(() => {
+		if (phase !== "steps" || detail) return;
+		const t = setTimeout(() => setSlow(true), SLOW_MS);
+		return () => clearTimeout(t);
+	}, [phase, detail]);
 
 	// Walk the steps; the last one waits for the watcher to be ready.
 	useEffect(() => {
@@ -97,7 +125,7 @@ export function HandOver({ text }: { text: string }) {
 			const t = setTimeout(() => setStep((s) => s + 1), STEP_MS);
 			return () => clearTimeout(t);
 		}
-		if (detail) {
+		if (detail?.worry.status === "awaiting_approval") {
 			const t = setTimeout(() => setPhase("permission"), STEP_MS);
 			return () => clearTimeout(t);
 		}
@@ -116,8 +144,23 @@ export function HandOver({ text }: { text: string }) {
 			await (allow ? api.approve(detail.worry.id) : api.deny(detail.worry.id));
 			setPhase(allow ? "allowed" : "denied");
 		} catch {
-			setPhase("error");
+			setPhase("decide_error");
 		}
+		setBusy(false);
+	};
+
+	const retry = async () => {
+		if (!detail) return;
+		setBusy(true);
+		setSlow(false);
+		setStep(0);
+		setPhase("steps");
+		try {
+			settle(await api.retry(detail.worry.id));
+		} catch {
+			setPhase("failed");
+		}
+		setBusy(false);
 	};
 
 	if (phase === "allowed" || phase === "denied") {
@@ -149,27 +192,37 @@ export function HandOver({ text }: { text: string }) {
 				“{text}”
 			</p>
 
-			{phase === "error" ? (
-				<p className="mt-10 text-[15px] text-muted">
-					Something went wrong taking this one. Nothing was set up. Try handing
-					it over again in a moment.
-				</p>
+			{phase === "steps" || phase === "permission" ? (
+				<>
+					<ol className="mt-10">
+						{STEPS.map((label, i) => (
+							<StepRow
+								key={label}
+								label={label}
+								state={
+									phase === "permission" || i < step
+										? "done"
+										: i === step
+											? "now"
+											: "todo"
+								}
+							/>
+						))}
+					</ol>
+					{slow && phase === "steps" && (
+						<p className="mt-6 text-[15px] leading-relaxed text-muted">
+							This one is taking longer than usual. I'm still working on it; you
+							can leave and find it on Home.
+						</p>
+					)}
+				</>
 			) : (
-				<ol className="mt-10">
-					{STEPS.map((label, i) => (
-						<StepRow
-							key={label}
-							label={label}
-							state={
-								phase === "permission" || i < step
-									? "done"
-									: i === step
-										? "now"
-										: "todo"
-							}
-						/>
-					))}
-				</ol>
+				<Outcome
+					phase={phase}
+					resolution={detail?.worry.resolution ?? null}
+					busy={busy}
+					onRetry={retry}
+				/>
 			)}
 
 			{phase === "permission" && detail?.watcher && (
@@ -182,5 +235,50 @@ export function HandOver({ text }: { text: string }) {
 				</div>
 			)}
 		</Screen>
+	);
+}
+
+function Outcome({
+	phase,
+	resolution,
+	busy,
+	onRetry,
+}: {
+	phase: Phase;
+	resolution: string | null;
+	busy: boolean;
+	onRetry: () => void;
+}) {
+	const line =
+		phase === "unreachable"
+			? "I couldn't reach your Warden, so nothing was handed over. Try again in a moment."
+			: phase === "decide_error"
+				? "That didn't go through. Nothing changed."
+				: (resolution ??
+					(phase === "failed"
+						? "Setting it up failed. Nothing was set up."
+						: "Parked."));
+	return (
+		<div className="mt-10" data-outcome={phase}>
+			{phase === "parked" && (
+				<h2 className="font-display text-[28px] font-light">Parked.</h2>
+			)}
+			{phase === "failed" && (
+				<h2 className="font-display text-[28px] font-light">
+					I couldn't set this up.
+				</h2>
+			)}
+			<p className="mt-3 text-[15px] leading-relaxed text-muted">{line}</p>
+			<div className="mt-8 flex gap-3">
+				{phase === "failed" && (
+					<Button disabled={busy} onClick={onRetry}>
+						Try again
+					</Button>
+				)}
+				<Button variant="quiet" onClick={() => navigate({ name: "home" })}>
+					Back home
+				</Button>
+			</div>
+		</div>
 	);
 }

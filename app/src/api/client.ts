@@ -43,8 +43,12 @@ import {
 export interface Api {
 	listWorries(): Promise<WorrySummary[]>;
 	getWorry(id: string): Promise<WorryDetail>;
-	/** Hand a worry over. Resolves once the watcher awaits approval. */
+	/** Hand a worry over. Resolves once it settles, whatever the outcome: awaiting approval
+	 *  (with a watcher), parked, failed (the resolution names the phase) or let go. Rejects
+	 *  only if the worry couldn't be handed over at all. */
 	handOver(text: string): Promise<WorryDetail>;
+	/** Build a `failed` worry again; resolves once it settles, like handOver. */
+	retry(id: string): Promise<WorryDetail>;
 	approve(id: string): Promise<WorryDetail>;
 	deny(id: string): Promise<WorryDetail>;
 	letGo(id: string): Promise<WorryDetail>;
@@ -141,6 +145,31 @@ export function createMockApi(latencyMs = 250): Api {
 			store.set(d.worry.id, d);
 			changed(d.worry.id);
 			return d;
+		},
+		async retry(id) {
+			await wait(latencyMs * 4);
+			return update(id, (d) => {
+				const now = iso(0);
+				// Like the Warden: a fresh build yields a watcher awaiting approval.
+				const rebuilt = buildDetail(d.worry.text, pickTemplate(d.worry.text), {
+					status: "awaiting_approval",
+					createdAgoMs: 0,
+					checkedAgoMs: null,
+				});
+				d.watcher = rebuilt.watcher
+					? { ...rebuilt.watcher, worry_id: d.worry.id }
+					: null;
+				d.worry.watcher_id = d.watcher?.id ?? null;
+				d.worry.status = "awaiting_approval";
+				d.worry.resolution = null;
+				d.worry.updated_at = now;
+				d.timeline.push({
+					at: now,
+					kind: "retried",
+					text: "You asked me to try again.",
+				});
+				return d;
+			});
 		},
 		async approve(id) {
 			await wait(latencyMs);

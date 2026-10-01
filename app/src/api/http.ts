@@ -37,7 +37,8 @@ export type HttpApiOptions = {
 	events: EventStream;
 	fetchImpl?: typeof fetch;
 	/** How long a hand-over may take to reach the permission card. */
-	handOverTimeoutMs?: number;
+	/** How often a settling hand-over is re-read besides live events (default 15 s). */
+	pollMs?: number;
 };
 
 export function createHttpApi(opts: HttpApiOptions): Api {
@@ -82,37 +83,35 @@ export function createHttpApi(opts: HttpApiOptions): Api {
 			worryDetailSchema,
 		);
 
-	/** Wait, event-driven, until the Warden has a watcher awaiting approval. */
-	function untilAwaitingApproval(id: string): Promise<WorryDetail> {
-		return new Promise((resolve, reject) => {
+	/**
+	 * Follow a worry until its hand-over settles: a permission card, parked, failed, or let go.
+	 * Event-driven with a slow poll as a safety net. There is deliberately no timeout: building
+	 * a watcher can take minutes, and giving up early once told the person "nothing was set up"
+	 * while the Warden was still working (S7 incident). Transient read errors are retried.
+	 */
+	function untilSettled(id: string): Promise<WorryDetail> {
+		return new Promise((resolve) => {
 			let done = false;
-			const finish = (settle: () => void) => {
+			const finish = (d: WorryDetail) => {
 				if (done) return;
 				done = true;
 				unsubscribe();
-				clearTimeout(timer);
-				settle();
+				clearInterval(poll);
+				resolve(d);
 			};
 			const check = async () => {
 				try {
 					const d = await getWorry(id);
 					const s = d.worry.status;
-					if (s === "awaiting_approval" && d.watcher) {
-						finish(() => resolve(d));
-					} else if (s === "failed" || s === "parked" || s === "resolved") {
-						finish(() => reject(new Error(`hand-over ended as ${s}`)));
-					}
-				} catch (e) {
-					finish(() => reject(e));
+					if (s !== "triaging" && s !== "compiling") finish(d);
+				} catch {
+					// keep following; the next event or poll tries again
 				}
 			};
 			const unsubscribe = opts.events.subscribe((e) => {
 				if (e.type === "connected" || e.data.worry_id === id) void check();
 			});
-			const timer = setTimeout(
-				() => finish(() => reject(new Error("hand-over timed out"))),
-				opts.handOverTimeoutMs ?? 60_000,
-			);
+			const poll = setInterval(() => void check(), opts.pollMs ?? 15_000);
 			void check();
 		});
 	}
@@ -125,7 +124,11 @@ export function createHttpApi(opts: HttpApiOptions): Api {
 			const worry = await request("POST", "/api/worries", worrySchema, {
 				text,
 			});
-			return untilAwaitingApproval(worry.id);
+			return untilSettled(worry.id);
+		},
+		async retry(id) {
+			await post(id, "retry");
+			return untilSettled(id);
 		},
 		approve: (id) => post(id, "approve"),
 		deny: (id) => post(id, "deny"),

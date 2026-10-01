@@ -15,6 +15,12 @@ function Body({ initial }: { initial: Detail }) {
 	const { worry, watcher, timeline } = detail;
 	const last = watcher?.last_result ?? null;
 	const open = worry.status !== "resolved";
+	// Present tense only while a watcher really runs in its sandbox (S7 incident: a parked
+	// worry showed "What it checks" and a jail for a sandbox that never existed).
+	const running = watcher?.state === "active" || watcher?.state === "paused";
+	const proposed =
+		worry.status === "awaiting_approval" &&
+		watcher?.state === "awaiting_approval";
 
 	const [failed, setFailed] = useState(false);
 
@@ -74,9 +80,11 @@ function Body({ initial }: { initial: Detail }) {
 				</section>
 			)}
 
-			{watcher && (
+			{watcher && (running || proposed) && (
 				<section className="mt-10">
-					<SectionLabel>What it checks</SectionLabel>
+					<SectionLabel>
+						{running ? "What it checks" : "What it would check"}
+					</SectionLabel>
 					<p className="text-[16px] leading-relaxed text-ink">
 						{watcher.adapters.map(adapterLabel).join(", ")},{" "}
 						{every(watcher.interval_s)}
@@ -85,7 +93,7 @@ function Body({ initial }: { initial: Detail }) {
 				</section>
 			)}
 
-			{watcher && worry.status !== "awaiting_approval" && (
+			{watcher && running && (
 				<section className="mt-10">
 					<SectionLabel>Its jail</SectionLabel>
 					<PermissionCard watcher={watcher} />
@@ -115,7 +123,12 @@ function Body({ initial }: { initial: Detail }) {
 			)}
 
 			{open && (
-				<div className="mt-12 flex">
+				<div className="mt-12 flex gap-3">
+					{worry.status === "failed" && (
+						<Button disabled={busy} onClick={() => act(api.retry, false)}>
+							{busy ? "Trying again…" : "Try again"}
+						</Button>
+					)}
 					<Button
 						variant="quiet"
 						disabled={busy}

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { initialDetails } from "../mocks/fixtures";
 import type { Listener } from "./events";
 import { ApiError, createHttpApi } from "./http";
@@ -107,17 +107,74 @@ describe("http api", () => {
 		expect(events.size).toBe(0); // unsubscribed
 	});
 
-	it("hand-over rejects when the worry fails", async () => {
-		const d = sample();
+	it.each(["failed", "parked"] as const)(
+		"hand-over resolves with the real state when it ends %s (S7 incident)",
+		async (end) => {
+			const d = sample();
+			const resolution =
+				"Testing the watcher failed: the check could not get its data.";
+			const api = createHttpApi({
+				getToken: () => "tok",
+				onUnauthorized: () => {},
+				events: fakeEvents(),
+				fetchImpl: async (_u, init) =>
+					init?.method === "POST"
+						? json({ ...d.worry, status: "triaging", watcher_id: null })
+						: json({
+								...d,
+								worry: { ...d.worry, status: end, resolution },
+								watcher: null,
+							}),
+			});
+			const out = await api.handOver("x");
+			expect(out.worry.status).toBe(end);
+			expect(out.worry.resolution).toBe(resolution);
+		},
+	);
+
+	it("hand-over keeps waiting past a minute and survives a failed read", async () => {
+		vi.useFakeTimers();
+		try {
+			const d = sample();
+			let reads = 0;
+			const api = createHttpApi({
+				getToken: () => "tok",
+				onUnauthorized: () => {},
+				events: fakeEvents(),
+				pollMs: 15_000,
+				fetchImpl: async (_u, init) => {
+					if (init?.method === "POST")
+						return json({ ...d.worry, status: "triaging", watcher_id: null });
+					reads += 1;
+					if (reads === 2) throw new TypeError("network blip");
+					const status = reads < 10 ? "compiling" : "awaiting_approval";
+					return json({
+						...d,
+						worry: { ...d.worry, status },
+						watcher: { ...d.watcher, state: "awaiting_approval" },
+					});
+				},
+			});
+			const box: { out: WorryDetail | null } = { out: null };
+			void api.handOver("x").then((out) => {
+				box.out = out;
+			});
+			await vi.advanceTimersByTimeAsync(120_000); // two minutes: no "gave up" any more
+			expect(box.out).toBeNull();
+			await vi.advanceTimersByTimeAsync(30_000);
+			expect(box.out?.worry.status).toBe("awaiting_approval");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("only a failed POST rejects: nothing was handed over", async () => {
 		const api = createHttpApi({
 			getToken: () => "tok",
 			onUnauthorized: () => {},
 			events: fakeEvents(),
-			fetchImpl: async (_u, init) =>
-				init?.method === "POST"
-					? json({ ...d.worry, status: "triaging", watcher_id: null })
-					: json({ ...d, worry: { ...d.worry, status: "failed" } }),
+			fetchImpl: async () => json({ detail: "down" }, 503),
 		});
-		await expect(api.handOver("x")).rejects.toThrow(/failed/);
+		await expect(api.handOver("x")).rejects.toBeInstanceOf(ApiError);
 	});
 });
