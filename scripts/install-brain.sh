@@ -48,6 +48,8 @@ if ! out=$(timeout 20 sudo tailscale serve --bg --https=443 --set-path /mcp http
   printf '%s\n' "$out" | grep -o 'https://login.tailscale.com[^ ]*' | head -1
   exit 2
 fi
+# ufw drops the brain container's packets to the tailnet IP unless allowed: one narrow rule.
+scripts/ufw-brain-mcp.sh
 # The token goes to OpenShell's provider store; the sandbox only ever sees a placeholder.
 CUSTODY_MCP_TOKEN=$(sed -n 's/^WARDEN_MCP_TOKEN=//p' "$CONF/warden.env") \
   nemoclaw "$BRAIN" mcp add custody --url "https://$host/mcp/" --env CUSTODY_MCP_TOKEN \

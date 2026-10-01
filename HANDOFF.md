@@ -40,7 +40,15 @@ No orphan sandboxes: only `custody-brain` and `cw-76epww8s` (the approved school
 ### Morning, for you
 1. On your phone, open each card and **Allow** or **Deny**: S7 (before ~08:45!), rain, GitHub. Pull to refresh if the app was open overnight; it needs the new build (it's served already).
 2. The old S7 attempt still shows on Home as "Parked". Let it go if you like (it isn't counted).
-3. Still blocked from yesterday: Tailscale Serve (see below), so the app is only reachable the way you reached it tonight.
+3. A T-11 test worry, "I'm worried my friend Lena is annoyed with me after what I said at the T-11 test dinner." (parked), is on Home. Let it go.
+
+### T-11 (brain) is now done: there was a second blocker, ufw
+Tailscale Serve is enabled (`/` app, `/api`, `/mcp`, tailnet only), and the brain's MCP registration showed `trustedPrivateTarget: match`. Even so, the first chat test created **no** worry. `nemoclaw custody-brain mcp status custody` showed `curl: (28) Connection timed out`, and the kernel log showed `[UFW BLOCK] IN=br-82185a31c7df SRC=172.18.0.2 DST=100.81.50.38 DPT=443`.
+- **Cause:** ufw's default deny dropped the brain container's packets to the tailnet IP.
+- **Fix:** `scripts/ufw-brain-mcp.sh` adds exactly one rule (`ALLOW IN on br-82185a31c7df from 172.18.0.2 to 100.81.50.38 port 443/tcp`, tagged `custody-brain-mcp`). It is idempotent, replaces itself if the container IP or bridge changes, and is called by `restart.sh` and `install-brain.sh`. ufw stays on with default deny, and nothing public changed.
+- **After the fix:** the probe shows `credential resolution: verified (HTTP 200)`. A chat through the loopback gateway created worry `w_01M3WV2BR1ABGXMJ51ZGGMB5HG` in `/api/worries` (parked, as a social worry). **The T-11 acceptance is met.**
+- **Behaviour fix:** while blocked, the brain had *claimed* "I've taken your worry" without any tool call. A new standing order (#7) and the skill now say: only claim what `hand_over` confirmed, and say plainly when a tool fails. Both are reinstalled in the brain.
+- `restart.sh`: HEALTHY in 38 s, with the ufw step included.
 
 ---
 
@@ -53,8 +61,8 @@ NemoClaw v0.0.124 · OpenShell 0.0.116 · OpenClaw v2026.7.1 · brain sandbox `c
 | A. NemoClaw healthy | done |
 | B. T-02 gateway chat endpoint (loopback) | done |
 | C. T-04 OpenShell SandboxDriver | done (security-reviewed, hardened) |
-| D. Deploy (systemd + tailscale serve, T-20 restart.sh) | services + restart.sh done; **tailnet URL blocked on the owner** (enable Tailscale Serve) |
-| E. T-11 brain | built and installed; **MCP hookup blocked on the same Tailscale Serve approval** |
+| D. Deploy (systemd + tailscale serve, T-20 restart.sh) | done: https://ubuntu-s-4vcpu-8gb-fra1.tail081ca8.ts.net/ (tailnet only) |
+| E. T-11 brain | **done** (2026-10-02): chat → MCP `hand_over` → worry in `/api/worries` |
 
 ## A. NemoClaw healthy: done
 `nemoclaw custody-brain status` (abridged):

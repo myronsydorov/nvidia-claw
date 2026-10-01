@@ -50,6 +50,8 @@ if ! gateway_answers; then
   nemoclaw "$BRAIN" recover >/dev/null 2>&1 || true
 fi
 wait_for 90 "OpenClaw gateway on 127.0.0.1:18789" gateway_answers
+# The brain's container IP can change on restart: re-pin its one ufw rule to /mcp/.
+scripts/ufw-brain-mcp.sh | sed 's/^/    /' || failures=$((failures + 1))
 # The gateway token rotates when the brain sandbox restarts; the Warden reads the new one.
 scripts/refresh-gateway-token.sh | sed 's/^/    /' || failures=$((failures + 1))
 
