@@ -1,0 +1,10 @@
+{
+  "text": "I keep worrying about my dad living alone. Is he alright today?",
+  "fear": "dad not safe or well alone today",
+  "answers": [
+    {
+      "stage": "triage",
+      "content": "{\"type\": \"person\", \"fear\": \"dad not safe or well alone today\", \"deadline\": \"2026-10-01T00:00:00Z\", \"route\": \"person\", \"signal\": \"\"}"
+    }
+  ]
+}

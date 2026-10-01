@@ -1,0 +1,14 @@
+{
+  "text": "I'm scared I'll miss it when the appointment page https://service.berlin.de/dienstleistung/120686/ finally changes.",
+  "fear": "appointment page https://service.berlin.de/dienstleistung/120686/ does not change before user can access it",
+  "answers": [
+    {
+      "stage": "triage",
+      "content": "{\"type\": \"checkable\", \"fear\": \"appointment page https://service.berlin.de/dienstleistung/120686/ does not change before user can access it\", \"deadline\": null, \"route\": \"watch\", \"signal\": \"HTTP 200 response with updated content from https://service.berlin.de/dienstleistung/120686/\"}"
+    },
+    {
+      "stage": "codegen",
+      "content": "```json\n{\n  \"adapters\": [\n    {\n      \"name\": \"web_diff\",\n      \"params\": {\n        \"url\": \"https://service.berlin.de/dienstleistung/120686/\"\n      }\n    }\n  ],\n  \"interval_s\": 300\n}\n```\n```python\nfrom watcher_runtime import harness\nfrom watcher_runtime.adapters import web_diff\n\nURL = \"https://service.berlin.de/dienstleistung/120686/\"\n\ntry:\n    page = web_diff.fetch(URL, None)\nexcept Exception as exc:\n    harness.fail(\"I couldn't read the appointment page just now.\")\nelse:\n    state = harness.load_state()\n    previous_hash = state.get(\"hash\")\n    harness.save_state({\"hash\": page[\"content_hash\"]})\n    if previous_hash is not None and previous_hash != page[\"content_hash\"]:\n        harness.emit(\n            \"act_now\",\n            \"The appointment page has changed. Check it now.\",\n            \"service.berlin.de\",\n            {\"excerpt\": page[\"excerpt\"]},\n            next_check_s=300\n        )\n    else:\n        harness.emit(\n            \"ok\",\n            \"No change on the appointment page yet.\",\n            \"service.berlin.de\",\n            next_check_s=300\n        )\n```"
+    }
+  ]
+}

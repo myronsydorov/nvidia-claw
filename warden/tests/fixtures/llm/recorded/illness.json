@@ -1,0 +1,10 @@
+{
+  "text": "What if I get seriously ill someday?",
+  "fear": "getting seriously ill",
+  "answers": [
+    {
+      "stage": "triage",
+      "content": "{\"type\": \"uncontrollable\", \"fear\": \"getting seriously ill\", \"deadline\": null, \"route\": \"park\", \"signal\": \"\"}"
+    }
+  ]
+}

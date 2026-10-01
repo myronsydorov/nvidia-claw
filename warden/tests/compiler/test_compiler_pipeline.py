@@ -285,3 +285,26 @@ async def test_a_worry_stranded_mid_compile_is_picked_up_again(store: Store) -> 
 
     assert await c.stranded() == [WORRY_ID]
     assert (await c.compile_worry(WORRY_ID)).status == "awaiting_approval"
+
+
+async def test_missing_input_parks_once_with_an_actionable_reason(store: Store) -> None:
+    invented = (
+        '```json\n{"adapters": [{"name": "ics_calendar", "params": '
+        '{"url": "https://school.example.de/calendar.ics"}}], "interval_s": 3600}\n```\n'
+        "```python\nfrom watcher_runtime import harness\nharness.emit('ok', 'x', 'y')\n```"
+    )
+    llm = ScriptedLLM([PARCEL["triage"]], [invented, PARCEL["codegen"]])
+    driver = ScriptedDriver(ok_run())
+    c, _ = compiler(store, llm, driver)
+
+    outcome = await c.compile_worry(WORRY_ID)
+
+    worry, kinds, watcher = await load(store)
+    assert (worry.status, worry.resolution) == (
+        "parked",
+        "Send me the link to the calendar and I'll watch it.",
+    )
+    assert kinds[-1] == "parked"
+    assert outcome.attempts == 1  # no retry: it would only invent another URL
+    assert [s for s, _ in llm.calls].count("codegen") == 1
+    assert watcher is None and driver.created == []  # never reached a sandbox

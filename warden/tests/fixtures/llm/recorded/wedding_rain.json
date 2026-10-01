@@ -1,0 +1,14 @@
+{
+  "text": "It's going to pour on our garden wedding in Potsdam this Saturday, isn't it?",
+  "fear": "rain on the garden wedding in Potsdam this Saturday",
+  "answers": [
+    {
+      "stage": "triage",
+      "content": "{\"type\": \"deadline\", \"fear\": \"rain on the garden wedding in Potsdam this Saturday\", \"deadline\": \"2026-10-03T23:59:59+00:00\", \"route\": \"watch\", \"signal\": \"weather forecast for Potsdam\"}"
+    },
+    {
+      "stage": "codegen",
+      "content": "```json\n{\n  \"adapters\": [\n    {\n      \"name\": \"weather_openmeteo\",\n      \"params\": {}\n    }\n  ],\n  \"interval_s\": 21600\n}\n```\n```python\nfrom watcher_runtime import harness\nfrom watcher_runtime.adapters import weather_openmeteo\n\nLATITUDE = 52.3909\nLONGITUDE = 13.0645\nTARGET_DATE = \"2026-10-03\"\n\ntry:\n    data = weather_openmeteo.fetch(LATITUDE, LONGITUDE)\nexcept Exception as exc:\n    harness.fail(\"I couldn't retrieve the weather forecast just now.\")\nelse:\n    forecast = data.get(\"daily\", [])\n    rain_expected = False\n    for day in forecast:\n        if day.get(\"date\") == TARGET_DATE:\n            precip = day.get(\"precipitation_mm\", 0.0)\n            code = day.get(\"weather_code\")\n            if precip > 0.0:\n                rain_expected = True\n                break\n            # WMO rain codes: 51-67, 80-82\n            if isinstance(code, int) and (51 <= code <= 67 or 80 <= code <= 82):\n                rain_expected = True\n                break\n            break  # found the day, no rain indicated\n    if rain_expected:\n        harness.emit(\n            \"act_now\",\n            \"Rain is forecast for Potsdam on your wedding day.\",\n            \"weather_openmeteo\",\n            {\"date\": TARGET_DATE},\n            next_check_s=21600\n        )\n    else:\n        harness.emit(\n            \"ok\",\n            \"No rain expected in Potsdam on your wedding day.\",\n            \"weather_openmeteo\",\n            {\"date\": TARGET_DATE},\n            next_check_s=21600\n        )\n```"
+    }
+  ]
+}

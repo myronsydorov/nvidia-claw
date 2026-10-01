@@ -1,0 +1,14 @@
+{
+  "text": "Is the S1 from Alexanderplatz (BVG stop 900100003) going to be cancelled tomorrow morning?",
+  "fear": "S1 from Alexanderplatz (BVG stop 900100003) cancelled tomorrow morning",
+  "answers": [
+    {
+      "stage": "triage",
+      "content": "{\"type\": \"checkable\", \"fear\": \"S1 from Alexanderplatz (BVG stop 900100003) cancelled tomorrow morning\", \"deadline\": \"2026-10-01T12:00:00Z\", \"route\": \"watch\", \"signal\": \"BVG S1 line status\"}"
+    },
+    {
+      "stage": "codegen",
+      "content": "```json\n{\n  \"adapters\": [\n    {\n      \"name\": \"transit_bvg\",\n      \"params\": {\n        \"stop_id\": \"900100003\"\n      }\n    }\n  ],\n  \"interval_s\": 300\n}\n```\n```python\nfrom watcher_runtime import harness\nfrom watcher_runtime.adapters import transit_bvg\n\nSTOP_ID = \"900100003\"\nDEADLINE_ISO = \"2026-10-01T12:00:00+00:00\"\n\ntry:\n    now = harness.now()\n    deadline = harness.parse_time(DEADLINE_ISO)\n    # If deadline has passed, worry is resolved (no cancellation seen)\n    if now >= deadline:\n        harness.emit(\n            \"resolved\",\n            \"Morning passed; no S1 cancellation observed.\",\n            \"bvg\",\n            {\"cancelled\": False},\n            fear_came_true=False\n        )\n    else:\n        data = transit_bvg.fetch(stop_id=STOP_ID)\n        departures = data.get(\"departures\", [])\n        cancelled_found = False\n        evidence = {}\n        for dep in departures:\n            if dep.get(\"line\") == \"S1\" and dep.get(\"cancelled\") is True:\n                when_str = dep.get(\"when\")\n                if when_str:\n                    when_dt = harness.parse_time(when_str)\n                    if when_dt < deadline:\n                        cancelled_found = True\n                        evidence = {\n                            \"line\": dep.get(\"line\"),\n                            \"direction\": dep.get(\"direction\"),\n                            \"when\": when_str,\n                            \"platform\": dep.get(\"platform\"),\n                            \"delay_s\": dep.get(\"delay_s\")\n                        }\n                        break\n        if cancelled_found:\n            harness.emit(\n                \"act_now\",\n                \"S1 from Alexanderplatz is cancelled tomorrow morning.\",\n                \"bvg\",\n                evidence,\n                next_check_s=300\n            )\n        else:\n            harness.emit(\n                \"ok\",\n                \"No S1 cancellation found for tomorrow morning.\",\n                \"bvg\",\n                next_check_s=300\n            )\nexcept Exception as e:\n    harness.fail(\"I couldn't check the BVG departures just now.\")\n```"
+    }
+  ]
+}

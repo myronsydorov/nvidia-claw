@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -134,6 +135,11 @@ Hard rules (a static checker rejects anything else):
   The first run has no saved state and must still emit "ok" or a real answer.
 - Stay calm and brief in summaries. No "check again" suggestions.
 - interval_s: 300..86400 seconds; check no more often than the worry needs.
+- Never invent a URL, tracking number, stop or transponder code. If the worry lacks one the
+  adapter needs, answer ONLY with a json block naming that adapter, and no python block:
+  ```json
+  {{"adapters": [], "missing": "ics_calendar"}}
+  ```
 
 Answer with exactly two fenced blocks, a ```json plan and a ```python run.py, like this:
 {EXAMPLE}
@@ -147,8 +153,9 @@ class PlanItem(BaseModel):
 
 
 class Plan(BaseModel):
-    adapters: list[PlanItem] = Field(min_length=1, max_length=MAX_ADAPTERS)
+    adapters: list[PlanItem] = Field(default_factory=list, max_length=MAX_ADAPTERS)
     interval_s: int = 3600
+    missing: str | None = None  # the adapter whose input (URL, tracking number...) is absent
 
 
 @dataclass(frozen=True)
@@ -162,6 +169,29 @@ class CodegenError(Exception):
     """The answer could not be turned into a plan + code. The message is ours, safe to feed back."""
 
 
+# What to ask the person for, per adapter. Our words, never the model's (they reach the app).
+_ASK: dict[str, str] = {
+    "ics_calendar": "Send me the link to the calendar and I'll watch it.",
+    "web_diff": "Send me the link to the page and I'll watch it.",
+    "rss": "Send me the link to the feed and I'll watch it.",
+    "http_json": "Send me the link to the data and I'll watch it.",
+    "parcel_dhl": "Send me the tracking number and I'll watch it.",
+    "transit_bvg": "Tell me which stop (or its BVG stop number) and I'll watch it.",
+    "flight_status": "Send me the plane's transponder code (ICAO24) and I'll watch it.",
+    "weather_openmeteo": "Tell me the place and I'll watch the forecast.",
+}
+_ASK_DEFAULT = "Tell me exactly what to check (a link or a number) and I'll watch it."
+
+
+class MissingInput(Exception):
+    """The worry lacks what an adapter needs. Retrying can't help: ask the person instead."""
+
+    def __init__(self, adapter: str) -> None:
+        super().__init__(f"missing input for {adapter}")
+        self.adapter = adapter
+        self.reason = _ASK.get(adapter, _ASK_DEFAULT)
+
+
 _BLOCK_RE = re.compile(r"```(json|python|py)[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
 
 
@@ -170,13 +200,33 @@ def parse_answer(content: str) -> tuple[Plan, str]:
     for lang, body in _BLOCK_RE.findall(content):
         key = "python" if lang.lower() in ("python", "py") else "json"
         blocks.setdefault(key, body)
-    if "json" not in blocks or "python" not in blocks:
+    if "json" not in blocks:
         raise CodegenError("the answer must contain one ```json plan block and one ```python block")
     try:
         plan = Plan.model_validate(json.loads(blocks["json"]))
     except (ValueError, ValidationError) as exc:
         raise CodegenError(f"the json plan is invalid ({type(exc).__name__})") from exc
+    if plan.missing is not None:
+        raise MissingInput(plan.missing)
+    if not plan.adapters:
+        raise CodegenError("the json plan has no adapters")
+    if "python" not in blocks:
+        raise CodegenError("the answer must contain one ```json plan block and one ```python block")
     return plan, blocks["python"]
+
+
+def _check_inputs_given(plan: Plan, worry_text: str) -> None:
+    """Every URL in the plan must come from the worry itself; an invented one means it's missing."""
+    for item in plan.adapters:
+        url = item.params.get("url")
+        if item.name not in _FACTORY_PARAMS or "url" not in _FACTORY_PARAMS[item.name]:
+            continue
+        if not isinstance(url, str):
+            continue  # resolve() reports the missing param
+        parts = urlsplit(url.strip())
+        where = f"{parts.hostname or ''}{parts.path}".rstrip("/").lower()
+        if not where or where not in worry_text.lower():
+            raise MissingInput(item.name)
 
 
 def resolve(plan: Plan) -> list[Adapter]:
@@ -209,8 +259,10 @@ def resolve(plan: Plan) -> list[Adapter]:
     return adapters
 
 
-def build(content: str) -> Generated:
+def build(content: str, worry_text: str) -> Generated:
+    """Raises MissingInput (park and ask) or CodegenError (feed back and retry)."""
     plan, code = parse_answer(content)
+    _check_inputs_given(plan, worry_text)
     adapters = resolve(plan)
     interval = min(max(plan.interval_s, MIN_INTERVAL_S), MAX_INTERVAL_S)
     return Generated(adapters=adapters, code=code, interval_s=interval)

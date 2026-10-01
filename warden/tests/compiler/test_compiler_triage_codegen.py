@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from warden.compiler import codegen
-from warden.compiler.codegen import CodegenError, build
+from warden.compiler.codegen import CodegenError, MissingInput, build
 from warden.compiler.llm import LLMError, Message, Stage
 from warden.compiler.triage import TriageError, parse_triage, triage
 
@@ -140,7 +140,7 @@ async def test_triage_prompt_wraps_the_worry_text_as_untrusted() -> None:
 
 @pytest.mark.parametrize("case", [0, 1, 2])
 def test_recorded_codegen_answers_build(case: int) -> None:
-    generated = build(REPLAY[case]["codegen"])
+    generated = build(REPLAY[case]["codegen"], "")  # fixed adapters: no URL to find
     assert generated.adapters and generated.code.startswith("from watcher_runtime import harness")
 
 
@@ -150,7 +150,7 @@ def test_build_resolves_factory_params_and_uses_our_why() -> None:
         '{"url": "https://www.example.org/tickets"}}], "interval_s": 5}\n```\n'
         "```python\nprint(1)\n```"
     )
-    generated = build(answer)
+    generated = build(answer, "Watch https://www.example.org/tickets for me")
     endpoint = generated.adapters[0].endpoints[0]
     assert (endpoint.host, endpoint.path) == ("www.example.org", "/tickets")
     assert endpoint.why == "check this page for changes"
@@ -179,7 +179,7 @@ def test_build_resolves_factory_params_and_uses_our_why() -> None:
         ({"adapters": [{"name": "parcel_dhl", "params": {"host": "evil.com"}}]}, "no params"),
         ({"adapters": [{"name": "shell", "params": {}}]}, "unknown adapter"),
         ({"adapters": [{"name": "transit_bvg", "params": {"stop_id": "../admin"}}]}, "numeric"),
-        ({"adapters": []}, "json plan is invalid"),
+        ({"adapters": [], "interval_s": "soon"}, "json plan is invalid"),
         (
             {"adapters": [{"name": "parcel_dhl"}, {"name": "parcel_dhl"}]},
             "only once",
@@ -189,9 +189,51 @@ def test_build_resolves_factory_params_and_uses_our_why() -> None:
 def test_build_rejects_bad_plans(plan: dict[str, object], expected: str) -> None:
     answer = f"```json\n{json.dumps(plan)}\n```\n```python\nprint(1)\n```"
     with pytest.raises(CodegenError, match=expected):
-        build(answer)
+        build(answer, json.dumps(plan))  # the worry "contains" every URL in the plan
 
 
 def test_build_requires_both_blocks() -> None:
     with pytest.raises(CodegenError, match="one ```json plan block"):
-        build("```python\nprint(1)\n```")
+        build("```python\nprint(1)\n```", "")
+
+
+# --- a URL or identifier the worry doesn't contain: park and ask, never invent ---
+
+ICS_PLAN = '{"adapters": [{"name": "ics_calendar", "params": {"url": "%s"}}]}'
+
+
+def test_an_invented_url_is_missing_input() -> None:
+    answer = (
+        "```json\n" + ICS_PLAN % "https://school.example.de/calendar.ics" + "\n```\n"
+        "```python\nprint(1)\n```"
+    )
+    worry = "What if the school moves Friday's parents' evening and I don't notice?"
+    with pytest.raises(MissingInput) as info:
+        build(answer, worry)
+    assert info.value.adapter == "ics_calendar"
+    assert info.value.reason == "Send me the link to the calendar and I'll watch it."
+
+
+def test_a_url_from_the_worry_is_accepted_whatever_its_case_or_trailing_slash() -> None:
+    answer = (
+        "```json\n" + ICS_PLAN % "https://school.example.de/cal.ics" + "\n```\n"
+        "```python\nprint(1)\n```"
+    )
+    build(answer, "Calendar: HTTPS://School.example.de/cal.ics/ please")
+
+
+def test_the_model_can_declare_the_input_missing() -> None:
+    with pytest.raises(MissingInput) as info:
+        build('```json\n{"adapters": [], "missing": "parcel_dhl"}\n```', "my parcel")
+    assert info.value.reason == "Send me the tracking number and I'll watch it."
+
+
+def test_an_unknown_missing_adapter_gets_a_generic_ask() -> None:
+    with pytest.raises(MissingInput) as info:
+        build('```json\n{"adapters": [], "missing": "rm -rf"}\n```', "x")
+    assert "rm -rf" not in info.value.reason  # model text never reaches the app
+
+
+def test_an_empty_plan_without_missing_is_an_error() -> None:
+    with pytest.raises(CodegenError, match="no adapters"):
+        build('```json\n{"adapters": []}\n```', "x")

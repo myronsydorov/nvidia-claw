@@ -1,0 +1,10 @@
+{
+  "text": "I think my friend is annoyed with me after what I said at dinner.",
+  "fear": "friend annoyed after dinner comment",
+  "answers": [
+    {
+      "stage": "triage",
+      "content": "{\"type\": \"social\", \"fear\": \"friend annoyed after dinner comment\", \"deadline\": null, \"route\": \"park\", \"signal\": \"\"}"
+    }
+  ]
+}

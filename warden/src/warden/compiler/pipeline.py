@@ -131,7 +131,13 @@ class Compiler:
             if not await self._still(worry_id, "compiling"):
                 return  # let go meanwhile; stop spending model calls
             answer = await self._llm.complete("codegen", messages)
-            feedback, candidate = await self._try(answer)
+            try:
+                feedback, candidate = await self._try(answer, text)
+            except codegen.MissingInput as missing:
+                # A URL or identifier the worry doesn't contain: retrying would only invent one.
+                outcome.problems.append(f"missing input for {missing.adapter}")
+                await self._park(worry_id, ("compiling",), missing.reason, outcome)
+                return
             if candidate is not None:
                 last = candidate
             if feedback is None:
@@ -144,10 +150,13 @@ class Compiler:
 
         await self._park(worry_id, ("compiling",), PARK_FAILED, outcome, failed=last)
 
-    async def _try(self, answer: str) -> tuple[str | None, _Attempt | None]:
-        """(None, attempt) on success, else (feedback for the model, attempt-or-None)."""
+    async def _try(self, answer: str, worry_text: str) -> tuple[str | None, _Attempt | None]:
+        """(None, attempt) on success, else (feedback for the model, attempt-or-None).
+
+        Raises codegen.MissingInput when the worry lacks what the watcher needs.
+        """
         try:
-            built = codegen.build(answer)
+            built = codegen.build(answer, worry_text)
         except codegen.CodegenError as exc:
             # Our message, but it can quote model-chosen names and URLs: wrap it.
             return "Problem:\n" + guard.untrusted(str(exc), "checker", max_chars=500), None

@@ -1,0 +1,10 @@
+{
+  "text": "Is my sister Anna OK? She hasn't texted since she landed in Lisbon.",
+  "fear": "sister Anna not safe after landing in Lisbon",
+  "answers": [
+    {
+      "stage": "triage",
+      "content": "{\"type\": \"person\", \"fear\": \"sister Anna not safe after landing in Lisbon\", \"deadline\": \"2026-10-01T23:52:30.109Z\", \"route\": \"person\", \"signal\": \"\"}"
+    }
+  ]
+}
