@@ -27,3 +27,6 @@ dist/
 .DS_Store
 *.log
 
+
+# keys
+*.key

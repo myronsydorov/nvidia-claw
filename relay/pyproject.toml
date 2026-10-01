@@ -3,7 +3,12 @@ name = "relay"
 version = "0.1.0"
 description = "Custody relay: encrypted mailbox that stores ciphertext only"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "fastapi>=0.142.0",
+    "pydantic>=2.13.5",
+    "uvicorn[standard]>=0.54.0",
+]
 
 [build-system]
 requires = ["hatchling"]

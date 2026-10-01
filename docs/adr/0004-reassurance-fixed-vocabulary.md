@@ -13,3 +13,9 @@ The layer-2 promise is "peace of mind without surveillance." Free-text answers g
 ## Consequences
 - ✅ The privacy claim can be proven: the privacy receipt plus the OpenShell egress log show a single small encrypted message.
 - ⚠️ Less expressive answers, on purpose. Richer updates happen human-to-human ("call her").
+
+## Amendment (T-14/T-15, 2026-10-01): authenticated boxes between peers
+- **Between paired peers, queries and answers use `crypto_box`** (X25519 + XSalsa20-Poly1305, PyNaCl `Box`), not anonymous sealed boxes. A sealed box can't tell the answering Warden *who* is asking, so the owner's sharing rules (THREAT_MODEL A7) couldn't be enforced: anyone who learned a public key could ask. `Box` authenticates the sender against the stored peer key. The primitive is the same, with the same relay-visible metadata (`sender_key_id` is on the envelope anyway).
+- **Sealed boxes are still used for the pairing accept**, where the offerer doesn't know the joiner yet. The accept carries a proof keyed by the code-derived key.
+- **The pairing offer** is a SecretBox under `Argon2id(code)` (interactive limits), at a mailbox id also derived from the code. A curious relay pays an Argon2id evaluation for each guess of the 40-bit code, and the code expires after 10 minutes and works once.
+- **Vocabulary enforcement** runs on the candidate answer, again after the sharing rule, and only then does encryption happen. The asker re-validates incoming answers with the same strict model (`extra="forbid"`, `strict=True`), so a modified peer can't put free text on screen either.

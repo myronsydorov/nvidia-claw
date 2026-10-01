@@ -187,6 +187,23 @@ class SharingRulesResponse(BaseModel):
     questions_log: list[QuestionLogEntry]
 
 
+# --- T-14/T-15 additions: pairing (CONTRACTS §2/§3). Zod mirrors land with the app in T-17. ---
+
+
+class PairingStartRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=64)  # what *I* call the peer; local only
+
+
+class PairingStartResponse(BaseModel):
+    code: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{8}$")
+    expires_at: AwareDatetime
+
+
+class PairingJoinRequest(BaseModel):
+    code: str = Field(min_length=8, max_length=16)  # normalised server-side (case, dashes)
+    display_name: str = Field(min_length=1, max_length=64)
+
+
 class PushKeys(BaseModel):
     p256dh: str
     auth: str

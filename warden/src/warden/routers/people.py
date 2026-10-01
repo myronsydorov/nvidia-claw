@@ -1,5 +1,3 @@
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, HTTPException, Request, status
 
 from warden.models import (
@@ -7,10 +5,10 @@ from warden.models import (
     AskPeerResponse,
     Peer,
     PeopleListItem,
-    PrivacyReceipt,
     ReassuranceAnswer,
 )
-from warden.state import get_events, get_store
+from warden.reassurance.service import BadAnswer, NoAnswer, PeerNotFound, RelayUnavailable
+from warden.state import get_reassurance, get_store
 
 router = APIRouter()
 
@@ -35,21 +33,13 @@ async def list_people(request: Request) -> list[PeopleListItem]:
 
 @router.post("/api/people/{peer_id}/ask")
 async def ask_peer(peer_id: str, body: AskPeerRequest, request: Request) -> AskPeerResponse:
-    store = get_store(request)
-    row = await store.peers.get(peer_id)
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="peer not found")
-
-    # No relay/crypto yet (T-14/T-15): an honest fixed-vocabulary placeholder, not a real answer.
-    now = datetime.now(UTC)
-    answer = ReassuranceAnswer(level="unknown", reason="not_enough_data", ts=now)
-    receipt = PrivacyReceipt(
-        bytes_sent=0, fields_shared=[], location_shared=False, egress_log_ref="n/a (no relay yet)"
-    )
-
-    row["last_answer"] = answer.model_dump(mode="json")
-    row["last_answer_at"] = now.isoformat()
-    await store.peers.put(peer_id, row)
-
-    await get_events(request).publish("peer.answer", {"peer_id": peer_id, "q": body.q})
-    return AskPeerResponse(answer=answer, receipt=receipt)
+    try:
+        return await get_reassurance(request).ask(peer_id, body.q)
+    except PeerNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "peer not found") from exc
+    except RelayUnavailable as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except NoAnswer as exc:
+        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, str(exc)) from exc
+    except BadAnswer as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc

@@ -32,5 +32,5 @@ async def get_ledger(request: Request) -> LedgerResponse:
         watchers_built=await store.watchers.count(),
         sandboxes_live=await store.sandboxes_live(),
         endpoints_denied=0,
-        peer_questions_answered=0,
+        peer_questions_answered=await store.questions_log.count(),
     )
