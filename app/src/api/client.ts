@@ -7,19 +7,27 @@ import {
 	pickTemplate,
 } from "../mocks/fixtures";
 import {
+	DAD,
 	initialLedger,
 	initialPeople,
 	initialQuestionLog,
 	initialRules,
 	mockAnswer,
+	mockPeer,
 } from "../mocks/people";
 import { createEventStream, type Listener } from "./events";
-import { createHttpApi } from "./http";
+import { ApiError, createHttpApi } from "./http";
 import {
 	type AskPeerResponse,
 	askPeerResponseSchema,
 	type LedgerResponse,
+	type PairingStartResponse,
+	type PairingStatusResponse,
+	type Peer,
 	type PeopleListItem,
+	pairingStartResponseSchema,
+	pairingStatusResponseSchema,
+	peerSchema,
 	peopleListItemSchema,
 	type ReassuranceQuestion,
 	type SharingRulesResponse,
@@ -42,8 +50,20 @@ export interface Api {
 	letGo(id: string): Promise<WorryDetail>;
 	/** Paired people and their last answer (GET /api/people). */
 	listPeople(): Promise<PeopleListItem[]>;
-	/** Ask a paired person's Warden a fixed-vocabulary question. */
+	/** Ask a paired person's Warden a fixed-vocabulary question. Rejects with an
+	 *  ApiError: 429 within the 10-minute cooldown, 503 no relay, 504 no answer in
+	 *  time, 502 an answer outside the vocabulary (discarded). */
 	ask(peerId: string, q: ReassuranceQuestion): Promise<AskPeerResponse>;
+	/** The fingerprints matched: my sharing rule for them takes effect. */
+	confirm(peerId: string): Promise<void>;
+	/** Forget a paired person (e.g. the fingerprints didn't match). */
+	unpair(peerId: string): Promise<void>;
+	/** Show a one-time code; `displayName` is what I call them. */
+	startPairing(displayName: string): Promise<PairingStartResponse>;
+	/** The code-showing side waits on this until the other phone has joined. */
+	pairingStatus(pairingId: string): Promise<PairingStatusResponse>;
+	/** Type the other phone's code. */
+	joinPairing(code: string, displayName: string): Promise<Peer>;
 	/** What others may ask about me, plus the log of what they asked. */
 	getSharingRules(): Promise<SharingRulesResponse>;
 	/** Replaces the full rules list; the log is server-maintained. */
@@ -52,6 +72,9 @@ export interface Api {
 	/** Live updates (GET /api/events). Returns an unsubscribe function. */
 	subscribe(listener: Listener): () => void;
 }
+
+const ASK_COOLDOWN_MS = 10 * 60_000;
+const MOCK_JOIN_AFTER_MS = 2_500;
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -67,6 +90,10 @@ export function createMockApi(latencyMs = 250): Api {
 	}
 
 	let people = initialPeople();
+	const pairings = new Map<
+		string,
+		{ name: string; startedAt: number; peer: Peer | null }
+	>();
 	let sharing: SharingRulesResponse = {
 		rules: initialRules(),
 		questions_log: initialQuestionLog(),
@@ -161,9 +188,20 @@ export function createMockApi(latencyMs = 250): Api {
 		async ask(peerId, q) {
 			// A round trip through the relay to the peer's Warden and back.
 			await wait(latencyMs * 3.6);
-			if (!people.some((p) => p.peer.id === peerId)) {
-				throw new Error(`unknown peer ${peerId}`);
+			const person = people.find((p) => p.peer.id === peerId);
+			if (!person) throw new ApiError(404, "peer not found");
+			// Like the Warden: one ask per person per 10 minutes...
+			const last = person.last_asked_at ?? person.last_answer_at;
+			if (last && Date.now() - Date.parse(last) < ASK_COOLDOWN_MS) {
+				throw new ApiError(429, "asked less than the cooldown ago");
 			}
+			// ...counted from when the question leaves, answered or not.
+			const askedAt = new Date().toISOString();
+			people = people.map((p) =>
+				p.peer.id === peerId ? { ...p, last_asked_at: askedAt } : p,
+			);
+			// Dad's computer is asleep: his Warden never answers (the 504 path).
+			if (peerId === DAD) throw new ApiError(504, "no answer in time");
 			const res = askPeerResponseSchema.parse(mockAnswer(q));
 			people = people.map((p) =>
 				p.peer.id === peerId
@@ -174,6 +212,80 @@ export function createMockApi(latencyMs = 250): Api {
 				l({ type: "peer.answer", data: { peer_id: peerId, q } });
 			}
 			return res;
+		},
+		async confirm(peerId) {
+			await wait(latencyMs);
+			if (!people.some((p) => p.peer.id === peerId)) {
+				throw new ApiError(404, "peer not found");
+			}
+		},
+		async unpair(peerId) {
+			await wait(latencyMs);
+			if (!people.some((p) => p.peer.id === peerId)) {
+				throw new ApiError(404, "peer not found");
+			}
+			people = people.filter((p) => p.peer.id !== peerId);
+			sharing = {
+				...sharing,
+				rules: sharing.rules.filter((r) => r.peer_id !== peerId),
+			};
+		},
+		async startPairing(displayName) {
+			await wait(latencyMs * 2);
+			const res = pairingStartResponseSchema.parse({
+				pairing_id: `pr_01K6C0PA1R${String(pairings.size).padStart(16, "0")}`,
+				code: "K7M2Q9XA",
+				expires_at: iso(10 * 60_000),
+			});
+			pairings.set(res.pairing_id, {
+				name: displayName,
+				startedAt: Date.now(),
+				peer: null,
+			});
+			return res;
+		},
+		async pairingStatus(pairingId) {
+			await wait(latencyMs);
+			const p = pairings.get(pairingId);
+			if (!p) return { state: "expired", peer: null };
+			// The other phone "joins" a few seconds after the code is shown.
+			if (!p.peer && Date.now() - p.startedAt > MOCK_JOIN_AFTER_MS) {
+				p.peer = mockPeer(people.length, p.name);
+				people = [
+					...people,
+					{
+						peer: p.peer,
+						last_answer: null,
+						last_answer_at: null,
+						last_asked_at: null,
+					},
+				];
+			}
+			return pairingStatusResponseSchema.parse({
+				state: p.peer ? "paired" : "waiting",
+				peer: p.peer,
+			});
+		},
+		async joinPairing(code, displayName) {
+			await wait(latencyMs * 3);
+			const normal = code.toUpperCase().replace(/[\s-]/g, "");
+			if (!/^[0-9A-HJKMNP-TV-Z]{8}$/.test(normal)) {
+				throw new ApiError(422, "a pairing code is 8 characters");
+			}
+			if (normal === "K7M2Q9XA") {
+				throw new ApiError(409, "that code is this Warden's own");
+			}
+			const peer = peerSchema.parse(mockPeer(people.length, displayName));
+			people = [
+				...people,
+				{
+					peer,
+					last_answer: null,
+					last_answer_at: null,
+					last_asked_at: null,
+				},
+			];
+			return peer;
 		},
 		async getSharingRules() {
 			await wait(latencyMs);

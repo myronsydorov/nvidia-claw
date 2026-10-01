@@ -49,7 +49,38 @@ for (const scheme of ["dark", "light"] as const) {
 				),
 			).toBeVisible();
 			await expect(card.getByText("Fields: level, reason, ts")).toBeVisible();
+			// No "check again": the buttons give way to the cooldown line.
+			await expect(
+				page.getByText(
+					"Asked 1 min ago. They'll tell you if anything changes.",
+				),
+			).toBeVisible();
+			await expect(
+				page.getByRole("button", { name: "Is Anna OK?" }),
+			).toHaveCount(0);
 			await shot(page, "people", scheme);
+		});
+
+		test("an asleep Warden: a calm 504 line, no made-up answer", async ({
+			page,
+		}) => {
+			await page.goto("/#/people");
+			await page.getByRole("button", { name: "Is Dad OK?" }).click();
+			await expect(
+				page.getByText(
+					"Dad's Warden didn't answer in time. Their computer may be asleep or offline. That alone doesn't mean anything is wrong.",
+				),
+			).toBeVisible();
+			// No re-ask loop after silence either: the cooldown runs from the question.
+			await expect(
+				page.getByText(
+					"Asked 1 min ago. They'll tell you if anything changes.",
+				),
+			).toBeVisible();
+			await expect(
+				page.getByRole("region", { name: "Dad's answer" }),
+			).toHaveCount(0);
+			await shot(page, "people-no-answer", scheme);
 		});
 
 		test("what others can ask about me: rules and the question log", async ({

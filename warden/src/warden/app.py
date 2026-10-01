@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             relay,
             probe,
             ask_timeout_s=float(os.environ.get("WARDEN_ASK_TIMEOUT_S", "20")),
+            ask_cooldown_s=float(os.environ.get("WARDEN_ASK_COOLDOWN_S", "600")),
             poll_s=float(os.environ.get("WARDEN_RELAY_POLL_S", "2")),
         )
         app.state.reassurance = reassurance

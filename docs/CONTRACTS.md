@@ -81,12 +81,12 @@ v1 adapters: `http_json`, `rss`, `web_diff`, `imap_search`, `ics_calendar`, `wea
 ## 2. Reassurance (Layer 2)
 
 ### Pairing
-A one-time 8-character code (Crockford base32, 10-minute expiry) on device A is typed on device B. The devices swap X25519 public keys through the relay. Stored as `Peer{ id: p_<ulid>, display_name, public_key, paired_at }`. Display names are local: each side names the other, and no name crosses the relay.
+A one-time 8-character code (Crockford base32, 10-minute expiry) on device A is typed on device B. The devices swap X25519 public keys through the relay. Stored as `Peer{ id: p_<ulid>, display_name, public_key, paired_at }`. The API adds `fingerprint: "dddd dddd"`: 8 digits from BLAKE2b over both public keys (sorted) plus the joiner's fresh 16-byte `nonce` from the sealed `pair_accept`, so both devices show the same number and a key can't be ground offline to match it. It is computed on read, never stored or sent over the relay. The two people compare it after pairing: someone who saw the code and joined first would show a different number on the offerer's screen, and either side can then `DELETE /api/people/{id}`. Display names are local: each side names the other, and no name crosses the relay.
 1. A: `POST /api/pairing {display_name}` → `{code, expires_at}`. A derives `(mailbox_id, key) = Argon2id(code)` and posts a SecretBox'd `{ "t": "pair_offer", "public_key", "expires_at" }` to `mailbox_id`. A stores the derived key, never the code.
-2. B: `POST /api/pairing/join {code, display_name}` → `Peer`. B opens the offer, saves A, and posts a sealed box `{ "t": "pair_accept", "public_key", "proof" }` to A's mailbox, where `proof` = keyed BLAKE2b(key, A_pk ‖ B_pk).
+2. B: `POST /api/pairing/join {code, display_name}` → `Peer`. B opens the offer, saves A, and posts a sealed box `{ "t": "pair_accept", "public_key", "proof", "nonce" }` to A's mailbox, where `proof` = keyed BLAKE2b(key, A_pk ‖ B_pk). B refuses (`409`) a code from a Warden it is already paired with: re-pairing starts with `DELETE /api/people/{id}`.
 3. A's mailbox poller checks the proof against its live pairings, saves B, and deletes the pairing, so the code works once.
 
-A new peer gets a default SharingRule on both sides: `{ allowed_questions: ["ok"], allowed_levels: all four, active: true }`.
+A new peer gets a default SharingRule on both sides: `{ allowed_questions: ["ok"], allowed_levels: all four, active: false }`. It becomes active only when the owner confirms the fingerprints match (`POST /api/people/{id}/confirm`). Until then, any question about them gets `unknown / not_enough_data`.
 
 Key ids (mailbox addresses) are BLAKE2b-128 hex of the public key. Messages between paired peers are authenticated `crypto_box` (X25519 + XSalsa20-Poly1305; see the ADR-0004 amendment); every plaintext envelope rejects unknown fields.
 
@@ -111,11 +111,12 @@ Inputs: computer activity (OS idle time) against hours learned over 14 days, a l
 `{ "bytes_sent": 212, "fields_shared": ["level","reason","ts"], "location_shared": false, "egress_log_ref": "relay:<message id>" }`. `bytes_sent` is the exact size of the answer's POST body to the relay (canonical JSON `{"ciphertext","sender_key_id"}`).
 
 ### Pairing and "me" shapes (T-14/T-15; zod mirrors land with the app in T-17)
-- `PairingStartRequest { display_name: str(1..64) }` → `PairingStartResponse { code: str(8, Crockford), expires_at: datetime }`
+- `PairingStartRequest { display_name: str(1..64) }` → `PairingStartResponse { pairing_id: pr_<ulid>, code: str(8, Crockford), expires_at: datetime }`
+- `PairingStatusResponse { state: "waiting" | "paired" | "expired", peer: Peer | null }` (`GET /api/pairing/{pairing_id}`; a completed pairing stays readable for an hour after its code expires, and an unknown id reads as `expired`)
 - `PairingJoinRequest { code: str (case and dashes ignored), display_name: str(1..64) }` → `Peer`
 
 ### PeopleListItem (items of `GET /api/people`)
-`{ "peer": Peer, "last_answer": ReassuranceAnswer | null, "last_answer_at": datetime | null }`
+`{ "peer": Peer, "last_answer": ReassuranceAnswer | null, "last_answer_at": datetime | null, "last_asked_at": datetime | null }`. `last_asked_at` is when I last asked, answered or not; the 10-minute cooldown runs from it.
 
 ### AskPeerResponse (`POST /api/people/{peer_id}/ask`)
 `{ "answer": ReassuranceAnswer, "receipt": PrivacyReceipt }`
@@ -147,9 +148,12 @@ Key ids are 32 lowercase hex chars. The ciphertext is standard base64, at most 4
 | POST | `/api/worries/{id}/let-go` | user closes it → `resolved`; returns WorryDetail |
 | POST | `/api/worries/{id}/outcome` | `{ fear_came_true: bool }` → returns WorryDetail |
 | GET | `/api/people` | list[PeopleListItem] — peers + last answer |
-| POST | `/api/people/{peer_id}/ask` | `{ q }` → AskPeerResponse (ReassuranceAnswer + PrivacyReceipt); `404` unknown peer, `503` no relay / relay down, `504` no answer in time (never a made-up answer), `502` the peer's answer failed our vocabulary check |
+| POST | `/api/people/{peer_id}/ask` | `{ q }` → AskPeerResponse (ReassuranceAnswer + PrivacyReceipt); `404` unknown peer, `503` no relay / relay down, `504` no answer in time (never a made-up answer), `502` the peer's answer failed our vocabulary check, `429` asked this person less than 10 minutes ago, counted from when the question was sent, answered or not (`WARDEN_ASK_COOLDOWN_S`; no "check again" loop, AGENTS #9) |
+| POST | `/api/people/{peer_id}/confirm` | the fingerprints matched: my SharingRule for them becomes active → `204`; `404` unknown peer |
+| DELETE | `/api/people/{peer_id}` | un-pair: forgets the peer and their SharingRule (the question log stays) → `204`; `404` unknown peer |
+| GET | `/api/pairing/{pairing_id}` | PairingStatusResponse: the code-showing side waits on this |
 | POST | `/api/pairing` | PairingStartRequest → PairingStartResponse; `503` without a relay |
-| POST | `/api/pairing/join` | PairingJoinRequest → Peer; `422` malformed code, `404` no live pairing, `409` own code, `503` without a relay |
+| POST | `/api/pairing/join` | PairingJoinRequest → Peer; `422` malformed code, `404` no live pairing, `409` own code or already paired, `503` without a relay |
 | POST | `/api/me/check-in` | "I'm OK" → `204`; clears "I need help" |
 | POST/DELETE | `/api/me/help` | set / clear "I need help" → `204` |
 | GET | `/api/me/signal` | ReassuranceAnswer: what an allowed peer asking "ok?" would get right now |
@@ -167,3 +171,6 @@ The brain **cannot** approve policies. Approval only ever comes from the human, 
 
 ## 5. Ledger (`GET /api/ledger`)
 `{ worries_total, active, never_needed_you, needed_you, median_warning_lead_h, came_true_rate, came_true_by_type{}, watchers_built, sandboxes_live, endpoints_denied, peer_questions_answered, locations_shared: 0 }` (`peer_questions_answered` = entries in my question log)
+
+- `came_true_rate`: a fraction from 0 to 1 = `needed_you / (needed_you + never_needed_you)`, i.e. of the closed worries with a known outcome, the share whose fear came true. It is `0.0` while no outcome is known; clients must then check `needed_you + never_needed_you = 0` and claim nothing (the app shows "No outcomes yet"). `came_true_by_type` uses the same unit per worry type.
+- DESIGN §6 also mentions "rules approved" and "bytes that left the friend's device". They are **deliberately not** in this response: the per-answer privacy receipt already shows the bytes, and approvals are visible per worry.

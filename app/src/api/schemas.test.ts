@@ -169,11 +169,20 @@ const peer = {
 	display_name: "Anna",
 	public_key: "base64key",
 	paired_at: "2026-09-29T08:00:00Z",
+	fingerprint: "4821 0937",
 };
 
 describe("peerSchema / peopleListItemSchema", () => {
 	it("accepts a contract-shaped peer", () => {
 		expect(peerSchema.safeParse(peer).success).toBe(true);
+	});
+
+	it("requires the 8-digit fingerprint", () => {
+		expect(
+			peerSchema.safeParse({ ...peer, fingerprint: "48210937" }).success,
+		).toBe(false);
+		const { fingerprint: _, ...without } = peer;
+		expect(peerSchema.safeParse(without).success).toBe(false);
 	});
 
 	it("rejects a peer id with the wrong prefix", () => {
@@ -188,6 +197,7 @@ describe("peerSchema / peopleListItemSchema", () => {
 				peer,
 				last_answer: null,
 				last_answer_at: null,
+				last_asked_at: null,
 			}).success,
 		).toBe(true);
 	});

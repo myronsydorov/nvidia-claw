@@ -55,5 +55,11 @@ def seed_peer(db_path: str, peer: dict[str, Any]) -> None:
         "peers",
         "id",
         peer["id"],
-        {"peer": peer, "last_answer": None, "last_answer_at": None},
+        {
+            "peer": peer,
+            "last_answer": None,
+            "last_answer_at": None,
+            "last_asked_at": None,
+            "pair_nonce": "00" * 16,
+        },
     )

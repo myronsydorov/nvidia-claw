@@ -6,6 +6,7 @@ import { Connect } from "./screens/Connect";
 import { HandOver } from "./screens/HandOver";
 import { Home } from "./screens/Home";
 import { Ledger } from "./screens/Ledger";
+import { PairEnter, PairShow } from "./screens/Pair";
 import { People } from "./screens/People";
 import { Sharing } from "./screens/Sharing";
 import { WorryDetail } from "./screens/WorryDetail";
@@ -36,6 +37,10 @@ function App() {
 			return <Sharing />;
 		case "ledger":
 			return <Ledger />;
+		case "pair-show":
+			return <PairShow />;
+		case "pair-enter":
+			return <PairEnter />;
 	}
 }
 

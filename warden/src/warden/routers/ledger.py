@@ -25,9 +25,11 @@ async def get_ledger(request: Request) -> LedgerResponse:
         active=await store.worries.count(status="watching"),
         never_needed_you=never_needed_you,
         needed_you=needed_you,
-        # These need the compiler/scheduler (T-09/T-10) to mean anything; honest zeros until then.
+        # CONTRACTS §5: the fraction (0–1) of closed worries with a known outcome whose fear
+        # came true; 0.0 while no outcome is known (the app then shows "No outcomes yet").
+        came_true_rate=needed_you / known if (known := needed_you + never_needed_you) else 0.0,
+        # Still honest zeros: these need data the scheduler doesn't record yet.
         median_warning_lead_h=0.0,
-        came_true_rate=0.0,
         came_true_by_type={},
         watchers_built=await store.watchers.count(),
         sandboxes_live=await store.sandboxes_live(),

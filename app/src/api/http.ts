@@ -1,10 +1,13 @@
-import type { z } from "zod";
+import { z } from "zod";
 import type { Api } from "./client";
 import type { EventStream } from "./events";
 import {
 	askPeerResponseSchema,
 	healthResponseSchema,
 	ledgerResponseSchema,
+	pairingStartResponseSchema,
+	pairingStatusResponseSchema,
+	peerSchema,
 	peopleListItemSchema,
 	sharingRulesResponseSchema,
 	type WorryDetail,
@@ -25,6 +28,8 @@ export class ApiError extends Error {
 	}
 }
 
+const noContent = z.undefined();
+
 export type HttpApiOptions = {
 	baseUrl?: string;
 	getToken: () => string | null;
@@ -40,7 +45,7 @@ export function createHttpApi(opts: HttpApiOptions): Api {
 	const doFetch = opts.fetchImpl ?? ((...a) => fetch(...a));
 
 	async function request<S extends z.ZodType>(
-		method: "GET" | "POST" | "PUT",
+		method: "GET" | "POST" | "PUT" | "DELETE",
 		path: string,
 		schema: S,
 		body?: unknown,
@@ -64,6 +69,7 @@ export function createHttpApi(opts: HttpApiOptions): Api {
 			throw new ApiError(401, "invalid device token");
 		}
 		if (!res.ok) throw new ApiError(res.status, `${method} ${path}`);
+		if (res.status === 204) return schema.parse(undefined);
 		return schema.parse(await res.json());
 	}
 
@@ -133,6 +139,35 @@ export function createHttpApi(opts: HttpApiOptions): Api {
 				askPeerResponseSchema,
 				{ q },
 			),
+		async confirm(peerId) {
+			await request(
+				"POST",
+				`/api/people/${encodeURIComponent(peerId)}/confirm`,
+				noContent,
+			);
+		},
+		async unpair(peerId) {
+			await request(
+				"DELETE",
+				`/api/people/${encodeURIComponent(peerId)}`,
+				noContent,
+			);
+		},
+		startPairing: (displayName) =>
+			request("POST", "/api/pairing", pairingStartResponseSchema, {
+				display_name: displayName,
+			}),
+		pairingStatus: (pairingId) =>
+			request(
+				"GET",
+				`/api/pairing/${encodeURIComponent(pairingId)}`,
+				pairingStatusResponseSchema,
+			),
+		joinPairing: (code, displayName) =>
+			request("POST", "/api/pairing/join", peerSchema, {
+				code,
+				display_name: displayName,
+			}),
 		getSharingRules: () =>
 			request("GET", "/api/sharing-rules", sharingRulesResponseSchema),
 		putSharingRules: (body) =>

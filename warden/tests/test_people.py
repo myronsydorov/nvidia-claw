@@ -9,7 +9,7 @@ def _peer() -> dict[str, object]:
     return {
         "id": f"p_{PEER_ULID}",
         "display_name": "Anna",
-        "public_key": "base64key",
+        "public_key": "QW5uYSdzIHB1YmxpYyBrZXksIDMyIGJ5dGVzIGxvbmc=",
         "paired_at": "2026-09-29T08:00:00Z",
     }
 

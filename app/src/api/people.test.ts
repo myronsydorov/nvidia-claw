@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	ANNA,
+	DAD,
 	initialLedger,
 	initialPeople,
 	initialQuestionLog,
@@ -8,7 +9,7 @@ import {
 } from "../mocks/people";
 import { createMockApi } from "./client";
 import type { Listener } from "./events";
-import { createHttpApi } from "./http";
+import { ApiError, createHttpApi } from "./http";
 import {
 	type Event,
 	ledgerResponseSchema,
@@ -56,6 +57,53 @@ describe("mock api: people, sharing, ledger", () => {
 
 		const anna = (await api.listPeople()).find((p) => p.peer.id === ANNA);
 		expect(anna?.last_answer).toEqual(res.answer);
+	});
+
+	it("refuses to ask again within 10 minutes (429), like the Warden", async () => {
+		const api = createMockApi(0);
+		await api.ask(ANNA, "ok");
+		await expect(api.ask(ANNA, "home")).rejects.toMatchObject({ status: 429 });
+	});
+
+	it("an asleep Warden is a 504, never a made-up answer", async () => {
+		const api = createMockApi(0);
+		await expect(api.ask(DAD, "ok")).rejects.toMatchObject({ status: 504 });
+		const dad = (await api.listPeople()).find((p) => p.peer.id === DAD);
+		expect(dad?.last_answer).toBeNull();
+		// The cooldown still started: the question left, even though no answer came.
+		expect(dad?.last_asked_at).not.toBeNull();
+		await expect(api.ask(DAD, "ok")).rejects.toMatchObject({ status: 429 });
+	});
+
+	it("pairs by showing a code: waiting, then paired with a fingerprint", async () => {
+		const api = createMockApi(0);
+		const started = await api.startPairing("Mia");
+		expect(started.code).toMatch(/^[0-9A-HJKMNP-TV-Z]{8}$/);
+		expect((await api.pairingStatus(started.pairing_id)).state).toBe("waiting");
+		await new Promise((r) => setTimeout(r, 2600));
+		const done = await api.pairingStatus(started.pairing_id);
+		expect(done.state).toBe("paired");
+		expect(done.peer?.fingerprint).toMatch(/^\d{4} \d{4}$/);
+		expect((await api.listPeople()).map((p) => p.peer.display_name)).toContain(
+			"Mia",
+		);
+	});
+
+	it("pairs by entering a code, refuses a malformed or own code, and unpairs", async () => {
+		const api = createMockApi(0);
+		await expect(api.joinPairing("nope", "Mia")).rejects.toMatchObject({
+			status: 422,
+		});
+		await expect(api.joinPairing("k7m2-q9xa", "Mia")).rejects.toMatchObject({
+			status: 409,
+		});
+		const peer = await api.joinPairing("ab12 cd34", "Mia");
+		expect(peer.display_name).toBe("Mia");
+		await api.unpair(peer.id);
+		expect((await api.listPeople()).some((p) => p.peer.id === peer.id)).toBe(
+			false,
+		);
+		await expect(api.unpair(peer.id)).rejects.toBeInstanceOf(ApiError);
 	});
 
 	it("refuses an unknown peer", async () => {
@@ -147,6 +195,66 @@ describe("http api: people, sharing, ledger (CONTRACTS §3)", () => {
 		});
 		await expect(api.ask(ANNA, "ok")).rejects.toThrow();
 	});
+
+	it("pairing routes: POST /api/pairing, GET /api/pairing/{id}, POST join, DELETE peer", async () => {
+		const peer = initialPeople()[0]?.peer;
+		const start = recording({
+			pairing_id: "pr_01K6C0PA1R0000000000000000",
+			code: "K7M2Q9XA",
+			expires_at: "2026-10-01T10:10:00Z",
+		});
+		await start.api.startPairing("Anna");
+		expect(start.calls[0]).toEqual({
+			url: "/api/pairing",
+			method: "POST",
+			body: { display_name: "Anna" },
+		});
+		const status = recording({ state: "paired", peer });
+		expect((await status.api.pairingStatus("pr_x")).peer).toEqual(peer);
+		expect(status.calls[0]?.url).toBe("/api/pairing/pr_x");
+		const join = recording(peer);
+		await join.api.joinPairing("K7M2Q9XA", "Anna");
+		expect(join.calls[0]).toEqual({
+			url: "/api/pairing/join",
+			method: "POST",
+			body: { code: "K7M2Q9XA", display_name: "Anna" },
+		});
+		const calls: string[] = [];
+		const del = createHttpApi({
+			getToken: () => "tok",
+			onUnauthorized: () => {},
+			events: noEvents,
+			fetchImpl: async (u, init) => {
+				calls.push(`${init?.method} ${String(u)}`);
+				return new Response(null, { status: 204 });
+			},
+		});
+		await del.confirm(ANNA);
+		await del.unpair(ANNA);
+		expect(calls).toEqual([
+			`POST /api/people/${ANNA}/confirm`,
+			`DELETE /api/people/${ANNA}`,
+		]);
+	});
+
+	it("a peer without a fingerprint is a contract error", async () => {
+		const peer = { ...initialPeople()[0]?.peer, fingerprint: undefined };
+		const { api } = recording(peer);
+		await expect(api.joinPairing("K7M2Q9XA", "Anna")).rejects.toThrow();
+	});
+
+	it.each([503, 504, 502, 429])(
+		"surfaces ask status %i as an ApiError",
+		async (status) => {
+			const api = createHttpApi({
+				getToken: () => "tok",
+				onUnauthorized: () => {},
+				events: noEvents,
+				fetchImpl: async () => json({ detail: "x" }, status),
+			});
+			await expect(api.ask(ANNA, "ok")).rejects.toMatchObject({ status });
+		},
+	);
 
 	it("GET and PUT /api/sharing-rules", async () => {
 		const body = { rules: initialRules(), questions_log: initialQuestionLog() };

@@ -16,6 +16,7 @@ def test_ledger_starts_at_zero(auth_headers: dict[str, str]) -> None:
     assert body["worries_total"] == 0
     assert body["sandboxes_live"] == 0
     assert body["locations_shared"] == 0
+    assert body["came_true_rate"] == 0.0  # no known outcome yet
 
 
 def test_ledger_counts_worries_and_outcomes(auth_headers: dict[str, str]) -> None:
@@ -37,3 +38,5 @@ def test_ledger_counts_worries_and_outcomes(auth_headers: dict[str, str]) -> Non
     assert body["worries_total"] == 2
     assert body["needed_you"] == 1
     assert body["never_needed_you"] == 1
+    # CONTRACTS §5: came true / closed with a known outcome, as a 0–1 fraction.
+    assert body["came_true_rate"] == 0.5

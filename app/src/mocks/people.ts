@@ -1,8 +1,10 @@
 import {
 	type LedgerResponse,
 	ledgerResponseSchema,
+	type Peer,
 	type PeopleListItem,
 	type PrivacyReceipt,
+	peerSchema,
 	peopleListItemSchema,
 	privacyReceiptSchema,
 	type QuestionLogEntry,
@@ -24,6 +26,9 @@ const HOUR = 60 * MIN;
 export const ANNA = "p_01K6C0ANNA0000000000000001";
 export const DAD = "p_01K6C0DAD00000000000000002";
 
+/** Every mock pairing shows this on "both" screens. */
+export const MOCK_FINGERPRINT = "4821 0937";
+
 // Placeholder X25519 keys (base64, 32 bytes of nothing in particular).
 const fakeKey = (seed: string) => btoa(seed.padEnd(32, ".")).slice(0, 43);
 
@@ -35,6 +40,7 @@ export function initialPeople(now: number = Date.now()): PeopleListItem[] {
 				display_name: "Anna",
 				public_key: fakeKey("anna"),
 				paired_at: iso(-9 * 24 * HOUR, now),
+				fingerprint: "1593 2604",
 			},
 			last_answer: {
 				level: "normal",
@@ -42,6 +48,7 @@ export function initialPeople(now: number = Date.now()): PeopleListItem[] {
 				ts: iso(-3 * HOUR, now),
 			},
 			last_answer_at: iso(-3 * HOUR, now),
+			last_asked_at: iso(-3 * HOUR, now),
 		},
 		{
 			peer: {
@@ -49,11 +56,28 @@ export function initialPeople(now: number = Date.now()): PeopleListItem[] {
 				display_name: "Dad",
 				public_key: fakeKey("dad"),
 				paired_at: iso(-4 * 24 * HOUR, now),
+				fingerprint: "7718 0452",
 			},
 			last_answer: null,
 			last_answer_at: null,
+			last_asked_at: null,
 		},
 	]);
+}
+
+/** A newly paired mock person. */
+export function mockPeer(
+	n: number,
+	name: string,
+	now: number = Date.now(),
+): Peer {
+	return peerSchema.parse({
+		id: `p_01K6C0NEW${String(n).padStart(17, "0")}`,
+		display_name: name,
+		public_key: fakeKey(`new${n}`),
+		paired_at: iso(0, now),
+		fingerprint: MOCK_FINGERPRINT,
+	});
 }
 
 export function initialRules(): SharingRule[] {

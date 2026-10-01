@@ -30,6 +30,7 @@ class PairAccept(_Strict):
     t: Literal["pair_accept"]
     public_key: str = Field(pattern=B64_KEY)
     proof: str = Field(pattern=r"^[0-9a-f]{64}$")
+    nonce: str = Field(pattern=NONCE)  # the joiner's fresh fingerprint salt
 
 
 class Query(_Strict):

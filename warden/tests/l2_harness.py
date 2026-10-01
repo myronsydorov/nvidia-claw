@@ -56,6 +56,9 @@ class Pair:
         bob_view = await self.bob.service.join_pairing(started.code, "Alice")
         await self.alice.service.poll_once()
         [row] = await self.alice.store.peers.query()
+        # Both people compare fingerprints and tap "It matches".
+        await self.alice.service.confirm(row["peer"]["id"])
+        await self.bob.service.confirm(bob_view.id)
         return row["peer"]["id"], bob_view.id
 
     async def alice_asks(self, peer_id: str, q: str = "ok") -> AskPeerResponse:
@@ -134,6 +137,7 @@ async def pair(tmp_path: Path, fast_pairing_kdf: None) -> AsyncIterator[Pair]:
                     signal_fn=signal_returning(),
                     busy_fn=lambda now: False,
                     ask_timeout_s=2.0,
+                    ask_cooldown_s=0.0,
                     ask_poll_s=0.01,
                 )
                 sides.append(Side(service, store, key))

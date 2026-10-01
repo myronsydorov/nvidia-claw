@@ -162,6 +162,31 @@ export const peerSchema = z.object({
 	display_name: z.string(),
 	public_key: z.string(),
 	paired_at: datetime,
+	/** Same 8 digits on both devices; the humans compare them after pairing. */
+	fingerprint: z.string().regex(/^[0-9]{4} [0-9]{4}$/),
+});
+
+// Pairing (CONTRACTS §2/§3, T-14).
+const pairingCode = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{8}$/);
+
+export const pairingStartRequestSchema = z.object({
+	display_name: z.string().min(1).max(64),
+});
+
+export const pairingStartResponseSchema = z.object({
+	pairing_id: z.string().regex(new RegExp(`^pr_${ULID}$`)),
+	code: pairingCode,
+	expires_at: datetime,
+});
+
+export const pairingStatusResponseSchema = z.object({
+	state: z.enum(["waiting", "paired", "expired"]),
+	peer: peerSchema.nullable(),
+});
+
+export const pairingJoinRequestSchema = z.object({
+	code: z.string().min(8).max(16),
+	display_name: z.string().min(1).max(64),
 });
 
 export const reassuranceAnswerSchema = z.object({
@@ -181,6 +206,8 @@ export const peopleListItemSchema = z.object({
 	peer: peerSchema,
 	last_answer: reassuranceAnswerSchema.nullable(),
 	last_answer_at: datetime.nullable(),
+	/** When I last asked, answered or not: the 10-minute cooldown runs from here. */
+	last_asked_at: datetime.nullable(),
 });
 
 export const askPeerRequestSchema = z.object({
@@ -252,6 +279,8 @@ export type ReassuranceQuestion = z.infer<typeof reassuranceQuestionSchema>;
 export type ReassuranceLevel = z.infer<typeof reassuranceLevelSchema>;
 export type ReassuranceReason = z.infer<typeof reassuranceReasonSchema>;
 export type Peer = z.infer<typeof peerSchema>;
+export type PairingStartResponse = z.infer<typeof pairingStartResponseSchema>;
+export type PairingStatusResponse = z.infer<typeof pairingStatusResponseSchema>;
 export type ReassuranceAnswer = z.infer<typeof reassuranceAnswerSchema>;
 export type PrivacyReceipt = z.infer<typeof privacyReceiptSchema>;
 export type PeopleListItem = z.infer<typeof peopleListItemSchema>;

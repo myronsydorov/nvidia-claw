@@ -106,3 +106,63 @@ export function withRule(
 	const others = rules.filter((r) => r.peer_id !== next.peer_id);
 	return [...others, next];
 }
+
+// --- Asking: the cooldown and honest failure lines ---------------------------
+
+/** One ask per person per 10 minutes: no "check again" loop (AGENTS #9). */
+export const ASK_COOLDOWN_MS = 10 * 60_000;
+
+/** Whole minutes since the last ask while still inside the cooldown (at least
+ *  1, so it never reads "0 min"), or null once asking is open again. */
+export function cooldownMinutes(
+	lastAskedAt: string | null,
+	now: number = Date.now(),
+): number | null {
+	if (!lastAskedAt) return null;
+	const ms = now - Date.parse(lastAskedAt);
+	if (ms >= ASK_COOLDOWN_MS) return null;
+	return Math.max(1, Math.floor(ms / 60_000));
+}
+
+export function cooldownLine(minutes: number): string {
+	return `Asked ${minutes} min ago. They'll tell you if anything changes.`;
+}
+
+/** What to say when an ask fails, by the Warden's status code. Calm, and only
+ *  what we know: a silent Warden says nothing about the person. */
+export function askFailure(status: number | null, name: string): string {
+	switch (status) {
+		case 503:
+			return "Your Warden couldn't reach the relay, so your question may not have gone through.";
+		case 504:
+			return `${name}'s Warden didn't answer in time. Their computer may be asleep or offline. That alone doesn't mean anything is wrong.`;
+		case 502:
+			return `${name}'s Warden sent something outside the fixed answers, so it was discarded.`;
+		case 404:
+			return `${name} isn't paired any more.`;
+		default:
+			return "That didn't go through.";
+	}
+}
+
+// --- Pairing -------------------------------------------------------------------
+
+/** "K7M2Q9XA" → "K7M2 Q9XA", easier to read aloud and type. */
+export function formatCode(code: string): string {
+	return `${code.slice(0, 4)} ${code.slice(4)}`;
+}
+
+export function joinFailure(status: number | null): string {
+	switch (status) {
+		case 422:
+			return "A code is 8 letters and digits, like K7M2 Q9XA.";
+		case 404:
+			return "That code doesn't match a live pairing. Codes last 10 minutes and work once.";
+		case 409:
+			return "That's this phone's own code, or you're already paired with them. To pair again, remove them from People first.";
+		case 503:
+			return "Your Warden can't reach the relay right now. Nothing was paired.";
+		default:
+			return "That didn't go through. Nothing was paired.";
+	}
+}

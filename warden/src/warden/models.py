@@ -137,6 +137,9 @@ class Peer(BaseModel):
     display_name: str
     public_key: str
     paired_at: AwareDatetime
+    # Same 8 digits on both devices, from both public keys; compared by the humans after
+    # pairing (T-17 gap, THREAT_MODEL A7). Computed on read, never stored or sent.
+    fingerprint: str = Field(pattern=r"^[0-9]{4} [0-9]{4}$")
 
 
 class ReassuranceAnswer(BaseModel):
@@ -156,6 +159,8 @@ class PeopleListItem(BaseModel):
     peer: Peer
     last_answer: ReassuranceAnswer | None
     last_answer_at: AwareDatetime | None
+    # When I last asked, answered or not: the 10-minute cooldown runs from here.
+    last_asked_at: AwareDatetime | None
 
 
 class AskPeerRequest(BaseModel):
@@ -195,8 +200,16 @@ class PairingStartRequest(BaseModel):
 
 
 class PairingStartResponse(BaseModel):
+    pairing_id: str = Field(pattern=r"^pr_[0-9A-HJKMNP-TV-Z]{26}$")
     code: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{8}$")
     expires_at: AwareDatetime
+
+
+class PairingStatusResponse(BaseModel):
+    """`GET /api/pairing/{pairing_id}`: the code-showing side waits on this."""
+
+    state: Literal["waiting", "paired", "expired"]
+    peer: Peer | None
 
 
 class PairingJoinRequest(BaseModel):

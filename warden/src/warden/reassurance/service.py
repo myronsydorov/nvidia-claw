@@ -37,6 +37,7 @@ from warden.ids import new_peer_id
 from warden.models import (
     AskPeerResponse,
     PairingStartResponse,
+    PairingStatusResponse,
     Peer,
     PrivacyReceipt,
     QuestionLogEntry,
@@ -62,6 +63,7 @@ log = logging.getLogger(__name__)
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 CODE_LENGTH = 8
 PAIRING_TTL = timedelta(minutes=10)
+COMPLETED_PAIRING_KEPT = timedelta(hours=1)
 QUERY_MAX_AGE = timedelta(minutes=5)
 SAMPLE_EVERY_S = 300.0
 ACTIVE_IF_IDLE_BELOW_S = 300.0
@@ -93,6 +95,14 @@ class SelfPairing(ReassuranceError):
     pass
 
 
+class AlreadyPaired(ReassuranceError):
+    pass
+
+
+class TooSoon(ReassuranceError):
+    pass
+
+
 class NoAnswer(ReassuranceError):
     pass
 
@@ -102,12 +112,14 @@ class BadAnswer(ReassuranceError):
 
 
 def default_rule(peer_id: str) -> SharingRule:
-    """What a new peer may ask: "ok?" only, every level. The owner can narrow or revoke it."""
+    """What a new peer may ask once the owner confirms the fingerprint: "ok?" only, every
+    level. Until then `active` is False, so a peer who raced the real joiner with an
+    overheard code only ever gets `unknown` (security-reviewer, T-17 integration)."""
     return SharingRule(
         peer_id=peer_id,
         allowed_questions=["ok"],
         allowed_levels=["normal", "unusual", "help", "unknown"],
-        active=True,
+        active=False,
     )
 
 
@@ -161,6 +173,7 @@ class Reassurance:
         signal_fn: Callable[[datetime, signal.SignalInputs], object] = signal.compute,
         busy_fn: Callable[[datetime], bool] = calendar_busy_now,
         ask_timeout_s: float = 20.0,
+        ask_cooldown_s: float = 600.0,
         ask_poll_s: float = 0.25,
         poll_s: float = 2.0,
     ) -> None:
@@ -173,10 +186,12 @@ class Reassurance:
         self._signal_fn = signal_fn
         self._busy_fn = busy_fn
         self._ask_timeout_s = ask_timeout_s
+        self._ask_cooldown = timedelta(seconds=ask_cooldown_s)
         self._ask_poll_s = ask_poll_s
         self._poll_s = poll_s
         self._waiting: dict[str, _Waiter] = {}
         self._poll_lock = asyncio.Lock()
+        self._ask_locks: dict[str, asyncio.Lock] = {}
 
     @property
     def public_key(self) -> bytes:
@@ -247,10 +262,12 @@ class Reassurance:
         expires_at = now + PAIRING_TTL
         await self._prune_pairings(now)
         # Stored before the offer is posted, so an accept can never beat it.
+        pairing_id = f"pr_{ULID()}"
         await self._store.pairings.put(
             mailbox_id,
             {
                 "mailbox_id": mailbox_id,
+                "pairing_id": pairing_id,
                 "key": key.hex(),
                 "expires_at": expires_at.isoformat(),
                 "display_name": display_name,
@@ -264,7 +281,22 @@ class Reassurance:
         except httpx.HTTPError as exc:
             await self._store.pairings.delete(mailbox_id)
             raise RelayUnavailable("relay unreachable") from exc
-        return PairingStartResponse(code=code, expires_at=expires_at)
+        return PairingStartResponse(pairing_id=pairing_id, code=code, expires_at=expires_at)
+
+    async def pairing_status(self, pairing_id: str) -> PairingStatusResponse:
+        now = self._now()
+        for row in await self._store.pairings.query():
+            if row.get("pairing_id") != pairing_id:
+                continue
+            if row.get("peer_id"):
+                peer_row = await self._store.peers.get(row["peer_id"])
+                if peer_row is not None:
+                    return PairingStatusResponse(state="paired", peer=self.peer_from_row(peer_row))
+                break  # paired, then un-paired
+            if datetime.fromisoformat(row["expires_at"]) > now:
+                return PairingStatusResponse(state="waiting", peer=None)
+            break
+        return PairingStatusResponse(state="expired", peer=None)
 
     async def join_pairing(self, raw_code: str, display_name: str) -> Peer:
         code = normalize_code(raw_code)
@@ -286,40 +318,94 @@ class Reassurance:
         offerer = base64.b64decode(offer.public_key)
         if offerer == self.public_key:
             raise SelfPairing("that code is this Warden's own")
+        if await self._peer_row_by_key_id(key_id(offerer)) is not None:
+            # Re-pairing starts with un-pairing here, so both sides move to the new
+            # fingerprint together (a replayed code can't desync them).
+            raise AlreadyPaired("already paired with that Warden")
+        pair_nonce = secrets.token_hex(16)  # fresh per pairing: no precomputed fingerprint
         accept = PairAccept(
             t="pair_accept",
             public_key=_b64(self.public_key),
             proof=crypto.pairing_proof(key, offerer, self.public_key),
+            nonce=pair_nonce,
         )
         sealed = crypto.seal_anonymous(PublicKey(offerer), accept.model_dump_json().encode())
         try:
             await relay.post(key_id(offerer), sealed, self.key_id)
         except httpx.HTTPError as exc:
             raise RelayUnavailable("relay unreachable") from exc
-        return await self._save_peer(offer.public_key, display_name)
+        return await self._save_peer(offer.public_key, display_name, pair_nonce)
 
     async def _prune_pairings(self, now: datetime) -> None:
+        # A completed pairing (no key left) stays an hour so its screen can show the result.
         for row in await self._store.pairings.query():
-            if datetime.fromisoformat(row["expires_at"]) <= now:
+            keep_until = datetime.fromisoformat(row["expires_at"])
+            if "key" not in row:
+                keep_until += COMPLETED_PAIRING_KEPT
+            if keep_until <= now:
                 await self._store.pairings.delete(row["mailbox_id"])
 
-    async def _save_peer(self, public_key_b64: str, display_name: str) -> Peer:
+    def peer_from_row(self, row: dict[str, Any]) -> Peer:
+        stored = row["peer"]
+        return Peer.model_validate(
+            {
+                **stored,
+                "fingerprint": crypto.fingerprint(
+                    self.public_key,
+                    base64.b64decode(stored["public_key"]),
+                    bytes.fromhex(row["pair_nonce"]),
+                ),
+            }
+        )
+
+    async def confirm(self, peer_id: str) -> None:
+        """The person saw matching fingerprints: the peer's sharing rule takes effect."""
+        if await self._store.peers.get(peer_id) is None:
+            raise PeerNotFound(peer_id)
+        stored = await self._store.sharing_rules.get(peer_id)
+        rule = SharingRule.model_validate(stored) if stored else default_rule(peer_id)
+        await self._store.sharing_rules.put(
+            peer_id, rule.model_copy(update={"active": True}).model_dump(mode="json")
+        )
+
+    async def unpair(self, peer_id: str) -> None:
+        """Forget a peer and their sharing rule. The question log stays: it's the owner's."""
+        if await self._store.peers.get(peer_id) is None:
+            raise PeerNotFound(peer_id)
+        await self._store.peers.delete(peer_id)
+        await self._store.sharing_rules.delete(peer_id)
+
+    async def _save_peer(self, public_key_b64: str, display_name: str, pair_nonce: str) -> Peer:
         existing = await self._peer_row_by_key_id(key_id(base64.b64decode(public_key_b64)))
         if existing is not None:
-            return Peer.model_validate(existing["peer"])
-        peer = Peer(
-            id=new_peer_id(),
-            display_name=display_name,
-            public_key=public_key_b64,
-            paired_at=self._now(),
-        )
-        await self._store.peers.put(
-            peer.id,
-            {"peer": peer.model_dump(mode="json"), "last_answer": None, "last_answer_at": None},
-        )
-        if await self._store.sharing_rules.get(peer.id) is None:
+            # Re-pairing: a new fingerprint to compare, and sharing waits for it again.
+            existing["pair_nonce"] = pair_nonce
+            peer_id = existing["peer"]["id"]
+            await self._store.peers.put(peer_id, existing)
+            stored = await self._store.sharing_rules.get(peer_id)
+            rule = SharingRule.model_validate(stored) if stored else default_rule(peer_id)
             await self._store.sharing_rules.put(
-                peer.id, default_rule(peer.id).model_dump(mode="json")
+                peer_id, rule.model_copy(update={"active": False}).model_dump(mode="json")
+            )
+            return self.peer_from_row(existing)
+        peer_id = new_peer_id()
+        row: dict[str, Any] = {
+            "peer": {
+                "id": peer_id,
+                "display_name": display_name,
+                "public_key": public_key_b64,
+                "paired_at": self._now().isoformat(),
+            },
+            "last_answer": None,
+            "last_answer_at": None,
+            "last_asked_at": None,
+            "pair_nonce": pair_nonce,
+        }
+        peer = self.peer_from_row(row)  # validates before anything is stored
+        await self._store.peers.put(peer_id, row)
+        if await self._store.sharing_rules.get(peer_id) is None:
+            await self._store.sharing_rules.put(
+                peer_id, default_rule(peer_id).model_dump(mode="json")
             )
         return peer
 
@@ -341,14 +427,16 @@ class Reassurance:
         if key_id(joiner) != message.sender_key_id:
             return
         now = self._now()
+        await self._prune_pairings(now)
         for row in await self._store.pairings.query():
-            if datetime.fromisoformat(row["expires_at"]) <= now:
-                await self._store.pairings.delete(row["mailbox_id"])
-                continue
+            if "key" not in row or datetime.fromisoformat(row["expires_at"]) <= now:
+                continue  # already used, or expired
             expected = crypto.pairing_proof(bytes.fromhex(row["key"]), self.public_key, joiner)
             if crypto.proof_matches(expected, accept.proof):
-                await self._store.pairings.delete(row["mailbox_id"])  # one-time
-                await self._save_peer(accept.public_key, row["display_name"])
+                peer = await self._save_peer(accept.public_key, row["display_name"], accept.nonce)
+                # One-time: the key is dropped; the row only remembers the outcome.
+                done = {k: v for k, v in row.items() if k != "key"}
+                await self._store.pairings.put(row["mailbox_id"], {**done, "peer_id": peer.id})
                 log.info("pairing completed")
                 return
         log.info("dropped a pairing accept with no live pairing")
@@ -360,7 +448,16 @@ class Reassurance:
         if row is None:
             raise PeerNotFound(peer_id)
         relay = self._require_relay()
-        peer = Peer.model_validate(row["peer"])
+        peer = self.peer_from_row(row)
+        async with self._ask_locks.setdefault(peer_id, asyncio.Lock()):
+            row = await self._store.peers.get(peer_id) or row
+            last = row.get("last_asked_at") or row.get("last_answer_at")
+            if last and self._now() - datetime.fromisoformat(last) < self._ask_cooldown:
+                # No "check again" loop (AGENTS #9, A11): they'll say if anything changes.
+                raise TooSoon("asked less than the cooldown ago")
+            # The clock starts when the question leaves, whatever comes back (or doesn't).
+            row["last_asked_at"] = self._now().isoformat()
+            await self._store.peers.put(peer_id, row)
         peer_key = PublicKey(base64.b64decode(peer.public_key))
         peer_key_id = key_id(peer_key)
 
@@ -393,9 +490,11 @@ class Reassurance:
             location_shared=False,
             egress_log_ref=f"relay:{message.id}",
         )
-        row["last_answer"] = answer.model_dump(mode="json")
-        row["last_answer_at"] = self._now().isoformat()
-        await self._store.peers.put(peer_id, row)
+        current = await self._store.peers.get(peer_id)
+        if current is not None:  # un-paired while we waited: never bring the peer back
+            current["last_answer"] = answer.model_dump(mode="json")
+            current["last_answer_at"] = self._now().isoformat()
+            await self._store.peers.put(peer_id, current)
         await self._events.publish("peer.answer", {"peer_id": peer_id, "q": q})
         return AskPeerResponse(answer=answer, receipt=receipt)
 
@@ -444,13 +543,14 @@ class Reassurance:
         if row is None:
             await self._handle_pair_accept(message)
             return
-        peer = Peer.model_validate(row["peer"])
+        peer = self.peer_from_row(row)
         try:
             plaintext = crypto.open_from_peer(
                 self._key, PublicKey(base64.b64decode(peer.public_key)), message.ciphertext
             )
         except crypto.CryptoError:
-            log.info("dropped a message that failed authentication")
+            # Not a Box from this peer: maybe they're re-pairing (a sealed accept).
+            await self._handle_pair_accept(message)
             return
         try:
             raw = json.loads(plaintext)

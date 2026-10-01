@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 // A tiny hash router: #/, #/hand-over?text=…, #/worry/:id, #/people,
-// #/sharing, #/ledger, #/connect
+// #/sharing, #/ledger, #/pair/show, #/pair/enter, #/connect
 
 export type Route =
 	| { name: "home" }
@@ -10,6 +10,8 @@ export type Route =
 	| { name: "people" }
 	| { name: "sharing" }
 	| { name: "ledger" }
+	| { name: "pair-show" }
+	| { name: "pair-enter" }
 	| { name: "connect" };
 
 export function parseHash(hash: string): Route {
@@ -24,6 +26,8 @@ export function parseHash(hash: string): Route {
 	if (path === "/people") return { name: "people" };
 	if (path === "/sharing") return { name: "sharing" };
 	if (path === "/ledger") return { name: "ledger" };
+	if (path === "/pair/show") return { name: "pair-show" };
+	if (path === "/pair/enter") return { name: "pair-enter" };
 	const worry = /^\/worry\/([A-Za-z0-9_]+)$/.exec(path);
 	if (worry?.[1]) return { name: "worry", id: worry[1] };
 	return { name: "home" };
@@ -43,6 +47,10 @@ export function href(route: Route): string {
 			return "#/sharing";
 		case "ledger":
 			return "#/ledger";
+		case "pair-show":
+			return "#/pair/show";
+		case "pair-enter":
+			return "#/pair/enter";
 		case "connect":
 			return "#/connect";
 	}

@@ -10,9 +10,11 @@ from warden.reassurance import crypto
 from warden.reassurance.keys import key_id
 from warden.reassurance.messages import Query
 from warden.reassurance.service import (
+    AlreadyPaired,
     InvalidCode,
     NoAnswer,
     PairingNotFound,
+    PeerNotFound,
     RelayUnavailable,
     SelfPairing,
     normalize_code,
@@ -33,10 +35,12 @@ async def test_pairing_gives_both_sides_a_peer_and_a_default_rule(pair: Pair) ->
         "peer_id": bob_id_for_alice,
         "allowed_questions": ["ok"],
         "allowed_levels": ["normal", "unusual", "help", "unknown"],
-        "active": True,
+        "active": True,  # pair() confirms; see test_sharing_waits_for_the_fingerprint
     }
     assert await pair.alice.store.sharing_rules.get(alice_id_for_bob) is not None
-    assert await pair.alice.store.pairings.query() == []  # consumed
+    [pending] = await pair.alice.store.pairings.query()
+    assert "key" not in pending  # consumed: the derived key is gone
+    assert pending["peer_id"] == alice_id_for_bob
 
 
 async def test_a_pairing_code_works_once(pair: Pair) -> None:
@@ -264,3 +268,184 @@ async def test_a_peer_flooding_queries_is_capped_per_hour(pair: Pair) -> None:
     await pair.bob.service.poll_once()
     # Alice's new query plus Bob's answer to it.
     assert len(pair.posts) == posts_before + MAX_QUERIES_PER_PEER_PER_HOUR + 2
+
+
+async def test_both_sides_show_the_same_fingerprint(pair: Pair) -> None:
+    alice_id_for_bob, bob_id_for_alice = await pair.pair()
+    [a_row] = await pair.alice.store.peers.query()
+    [b_row] = await pair.bob.store.peers.query()
+    a_fp = pair.alice.service.peer_from_row(a_row).fingerprint
+    b_fp = pair.bob.service.peer_from_row(b_row).fingerprint
+    assert a_fp == b_fp
+    assert len(a_fp) == 9 and a_fp[4] == " "
+    assert "fingerprint" not in a_row["peer"]  # computed on read, never stored
+
+
+async def test_a_racing_joiner_shows_a_different_fingerprint(pair: Pair) -> None:
+    """Eve joins first with an overheard code: Alice's screen shows fp(Alice, Eve), the real
+    Bob's shows fp(Alice, Bob). The humans comparing screens see the mismatch."""
+    started = await pair.alice.service.start_pairing("Bob")
+    real_bob_key = pair.bob.key
+    eve = pair.bob.service
+    eve._key = PrivateKey.generate()
+    await eve.join_pairing(started.code, "Alice")  # Eve first
+    await pair.alice.service.poll_once()
+    eve._key = real_bob_key
+    await pair.bob.store.peers.delete((await pair.bob.store.peers.query())[0]["peer"]["id"])
+    bob_view = await pair.bob.service.join_pairing(started.code, "Alice")  # Bob too late
+    await pair.alice.service.poll_once()
+
+    [alice_row] = await pair.alice.store.peers.query()  # paired with Eve only
+    assert pair.alice.service.peer_from_row(alice_row).fingerprint != bob_view.fingerprint
+
+
+async def test_pairing_status_waits_then_reports_the_peer(pair: Pair) -> None:
+    started = await pair.alice.service.start_pairing("Bob")
+    status = await pair.alice.service.pairing_status(started.pairing_id)
+    assert (status.state, status.peer) == ("waiting", None)
+
+    bob_view = await pair.bob.service.join_pairing(started.code, "Alice")
+    await pair.alice.service.poll_once()
+    status = await pair.alice.service.pairing_status(started.pairing_id)
+    assert status.state == "paired" and status.peer is not None
+    assert status.peer.display_name == "Bob"
+    assert status.peer.fingerprint == bob_view.fingerprint
+
+    # Still shown for a while after the code's 10 minutes, then forgotten.
+    pair.clock.now += timedelta(minutes=30)
+    assert (await pair.alice.service.pairing_status(started.pairing_id)).state == "paired"
+    pair.clock.now += timedelta(hours=1)
+    await pair.alice.service.start_pairing("someone else")  # prunes
+    assert (await pair.alice.service.pairing_status(started.pairing_id)).state == "expired"
+
+
+async def test_pairing_status_expires_and_unknown_ids_are_expired(pair: Pair) -> None:
+    started = await pair.alice.service.start_pairing("Bob")
+    pair.clock.now += timedelta(minutes=11)
+    assert (await pair.alice.service.pairing_status(started.pairing_id)).state == "expired"
+    assert (await pair.alice.service.pairing_status("pr_nope")).state == "expired"
+
+
+async def test_unpair_forgets_the_peer_and_their_rule_but_keeps_the_log(pair: Pair) -> None:
+    alice_id_for_bob, bob_id_for_alice = await pair.pair()
+    await pair.alice_asks(alice_id_for_bob)
+    await pair.bob.service.unpair(bob_id_for_alice)
+    assert await pair.bob.store.peers.query() == []
+    assert await pair.bob.store.sharing_rules.get(bob_id_for_alice) is None
+    assert len(await pair.bob.store.questions_log.query()) == 1
+    # Alice's next question now comes from an unknown key: dropped, not answered.
+    pair.alice.service._ask_timeout_s = 0.2
+    with pytest.raises(NoAnswer):
+        await pair.alice_asks(alice_id_for_bob)
+    with pytest.raises(PeerNotFound):
+        await pair.bob.service.unpair(bob_id_for_alice)
+
+
+async def test_asking_again_within_the_cooldown_is_refused(pair: Pair) -> None:
+    from warden.reassurance.service import TooSoon
+
+    alice_id_for_bob, _ = await pair.pair()
+    pair.alice.service._ask_cooldown = timedelta(minutes=10)
+    await pair.alice_asks(alice_id_for_bob)
+    posts = len(pair.posts)
+    pair.clock.now += timedelta(minutes=9)
+    with pytest.raises(TooSoon):
+        await pair.alice_asks(alice_id_for_bob)
+    assert len(pair.posts) == posts  # nothing was sent
+    pair.clock.now += timedelta(minutes=1, seconds=1)
+    assert (await pair.alice_asks(alice_id_for_bob)).answer.level == "normal"
+
+
+async def test_sharing_waits_for_the_fingerprint(pair: Pair) -> None:
+    """A peer (maybe one who raced the real joiner) gets only `unknown` until the owner taps
+    "It matches"."""
+    started = await pair.alice.service.start_pairing("Bob")
+    bob_view = await pair.bob.service.join_pairing(started.code, "Alice")
+    await pair.alice.service.poll_once()
+    [a_row] = await pair.alice.store.peers.query()
+    alice_id_for_bob = a_row["peer"]["id"]
+    rule = await pair.bob.store.sharing_rules.get(bob_view.id)
+    assert rule is not None and rule["active"] is False
+
+    response = await pair.alice_asks(alice_id_for_bob)
+    assert (response.answer.level, response.answer.reason) == ("unknown", "not_enough_data")
+
+    await pair.bob.service.confirm(bob_view.id)
+    pair.clock.now += timedelta(minutes=11)
+    pair.alice.service._ask_cooldown = timedelta(minutes=10)
+    assert (await pair.alice_asks(alice_id_for_bob)).answer.level == "normal"
+
+
+async def test_each_pairing_has_its_own_fingerprint(pair: Pair) -> None:
+    """The joiner's fresh nonce: the same two keys never repeat a number, so a key ground
+    offline against yesterday's number is useless today."""
+    alice_id_for_bob, bob_id_for_alice = await pair.pair()
+    first = pair.bob.service.peer_from_row(
+        await pair.bob.store.peers.get(bob_id_for_alice)  # type: ignore[arg-type]
+    ).fingerprint
+    with pytest.raises(AlreadyPaired):  # a replayed or new code can't desync a pairing
+        await pair.bob.service.join_pairing(
+            (await pair.alice.service.start_pairing("Bob")).code, "Alice"
+        )
+    await pair.bob.service.unpair(bob_id_for_alice)  # re-pairing starts with un-pairing
+    started = await pair.alice.service.start_pairing("Bob")
+    again = await pair.bob.service.join_pairing(started.code, "Alice")
+    await pair.alice.service.poll_once()
+    status = await pair.alice.service.pairing_status(started.pairing_id)
+    assert status.state == "paired" and status.peer is not None
+    assert status.peer.fingerprint == again.fingerprint != first
+    # Re-pairing asks for the fingerprint check again, on both sides.
+    for store, peer_id in ((pair.alice.store, alice_id_for_bob), (pair.bob.store, again.id)):
+        rule = await store.sharing_rules.get(peer_id)
+        assert rule is not None and rule["active"] is False
+
+
+async def test_the_cooldown_starts_when_the_question_is_sent(pair: Pair) -> None:
+    from warden.reassurance.service import TooSoon
+
+    alice_id_for_bob, _ = await pair.pair()
+    alice = pair.alice.service
+    alice._ask_cooldown = timedelta(minutes=10)
+    alice._ask_timeout_s = 0.1
+    with pytest.raises(NoAnswer):  # Bob is asleep
+        await alice.ask(alice_id_for_bob, "ok")
+    with pytest.raises(TooSoon):  # ...and asking again right away is not allowed
+        await alice.ask(alice_id_for_bob, "home")
+    [row] = await pair.alice.store.peers.query()
+    assert row["last_asked_at"] is not None and row["last_answer"] is None
+
+
+async def test_two_asks_at_once_send_one_question(pair: Pair) -> None:
+    import asyncio
+
+    from warden.reassurance.service import TooSoon
+
+    alice_id_for_bob, _ = await pair.pair()
+    alice = pair.alice.service
+    alice._ask_cooldown = timedelta(minutes=10)
+    alice._ask_timeout_s = 0.1
+    results = await asyncio.gather(
+        alice.ask(alice_id_for_bob, "ok"),
+        alice.ask(alice_id_for_bob, "ok"),
+        return_exceptions=True,
+    )
+    assert sorted(type(r).__name__ for r in results) == ["NoAnswer", "TooSoon"]
+    assert any(isinstance(r, TooSoon) for r in results)
+
+
+async def test_unpairing_during_an_ask_does_not_bring_the_peer_back(pair: Pair) -> None:
+    import asyncio
+
+    alice_id_for_bob, _ = await pair.pair()
+    task = asyncio.create_task(pair.alice.service.ask(alice_id_for_bob, "ok"))
+    await asyncio.sleep(0.02)
+    await pair.alice.service.unpair(alice_id_for_bob)
+    while not task.done():
+        await pair.bob.service.poll_once()
+        await asyncio.sleep(0.01)
+    assert await pair.alice.store.peers.get(alice_id_for_bob) is None
+
+
+async def test_confirm_an_unknown_peer_is_an_error(pair: Pair) -> None:
+    with pytest.raises(PeerNotFound):
+        await pair.alice.service.confirm("p_01K6C0NKNWN0000000000000099")

@@ -4,10 +4,15 @@ import { reassuranceReasonSchema } from "../api/schemas";
 import { initialLedger } from "../mocks/people";
 import {
 	answerHeadline,
+	askFailure,
 	askLabel,
+	cooldownLine,
+	cooldownMinutes,
 	defaultRule,
 	didntComeTrue,
+	formatCode,
 	hours,
+	joinFailure,
 	pct,
 	receiptLine,
 	withRule,
@@ -101,5 +106,51 @@ describe("sharing rules", () => {
 		expect(next).toHaveLength(2);
 		expect(next.find((r) => r.peer_id === a.peer_id)?.active).toBe(false);
 		expect(next.find((r) => r.peer_id === b.peer_id)).toEqual(b);
+	});
+});
+
+describe("ask cooldown", () => {
+	const now = Date.parse("2026-10-01T12:00:00Z");
+	const ago = (min: number) => new Date(now - min * 60_000).toISOString();
+
+	it("counts whole minutes inside the 10 minutes, never 0", () => {
+		expect(cooldownMinutes(ago(0.2), now)).toBe(1);
+		expect(cooldownMinutes(ago(3.7), now)).toBe(3);
+		expect(cooldownMinutes(ago(9.9), now)).toBe(9);
+	});
+
+	it("opens again at 10 minutes, and when never asked", () => {
+		expect(cooldownMinutes(ago(10), now)).toBeNull();
+		expect(cooldownMinutes(null, now)).toBeNull();
+	});
+
+	it("says the line", () => {
+		expect(cooldownLine(3)).toBe(
+			"Asked 3 min ago. They'll tell you if anything changes.",
+		);
+	});
+});
+
+describe("honest failures", () => {
+	it("503: may not have gone through (the POST may have reached the relay)", () => {
+		expect(askFailure(503, "Anna")).toBe(
+			"Your Warden couldn't reach the relay, so your question may not have gone through.",
+		);
+	});
+
+	it("504: silence says nothing about the person", () => {
+		const line = askFailure(504, "Anna");
+		expect(line).toMatch(/^Anna's Warden didn't answer in time/);
+		expect(line).toMatch(/doesn't mean anything is wrong/);
+	});
+
+	it("never guesses at an unknown failure", () => {
+		expect(askFailure(null, "Anna")).toBe("That didn't go through.");
+	});
+
+	it("explains pairing failures", () => {
+		expect(joinFailure(404)).toMatch(/10 minutes and work once/);
+		expect(joinFailure(409)).toMatch(/own code/);
+		expect(formatCode("K7M2Q9XA")).toBe("K7M2 Q9XA");
 	});
 });

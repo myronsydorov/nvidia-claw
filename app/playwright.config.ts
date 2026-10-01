@@ -7,7 +7,8 @@ import { APP_PORT, E2E_TOKEN, WARDEN_PORT } from "./e2e/env.ts";
 // T-12 smoke test: the real app against a real local Warden with mock
 // sandboxes and the real compiler on replayed model answers. A fresh SQLite file per run.
 
-const dbPath = join(mkdtempSync(join(tmpdir(), "custody-e2e-")), "warden.db");
+const tmp = mkdtempSync(join(tmpdir(), "custody-e2e-"));
+const dbPath = join(tmp, "warden.db");
 
 export default defineConfig({
 	testDir: "e2e",
@@ -33,6 +34,8 @@ export default defineConfig({
 				CUSTODY_LLM_REPLAY: "warden/tests/fixtures/llm/replay.json",
 				WARDEN_DEVICE_TOKEN: E2E_TOKEN,
 				WARDEN_DB_PATH: dbPath,
+				WARDEN_KEY_PATH: join(tmp, "warden.key"), // never a key in the repo
+				CUSTODY_ACTIVITY: "off",
 			},
 			reuseExistingServer: false,
 			timeout: 60_000,

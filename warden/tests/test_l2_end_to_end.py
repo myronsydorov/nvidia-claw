@@ -99,6 +99,7 @@ def world(tmp_path: Path) -> Iterator[World]:
                 "RELAY_URL": relay.url,
                 "WARDEN_RELAY_POLL_S": "0.2",
                 "WARDEN_ASK_TIMEOUT_S": "10",
+                "WARDEN_ASK_COOLDOWN_S": "0",  # this test asks three times in a row
                 "WARDEN_SCHEDULER": "off",
                 "WARDEN_COMPILER": "off",
                 "CUSTODY_SANDBOX": "mock",
@@ -145,11 +146,17 @@ def test_two_wardens_pair_and_answer_ok_through_the_relay(world: World) -> None:
     alice_peer = _wait_for_peer(alice)
     alice_id_for_anna = str(alice_peer["id"])
     assert alice_peer["display_name"] == "Anna"
-    # The code is one-time: joining again finds an offer, but Alice drops the second accept.
-    assert (
-        anna.post("/api/pairing/join", json={"code": code, "display_name": "x"}).json()["id"]
-        == anna_id_for_alice
-    )
+    # Both screens show the same fingerprint, and the code-showing side learns it's done.
+    status = alice.get(f"/api/pairing/{started.json()['pairing_id']}").json()
+    assert status["state"] == "paired"
+    assert status["peer"]["fingerprint"] == joined.json()["fingerprint"]
+    assert alice_peer["fingerprint"] == joined.json()["fingerprint"]
+    # Both tap "It matches"; until then neither side's sharing rule is active.
+    assert alice.post(f"/api/people/{alice_id_for_anna}/confirm").status_code == 204
+    assert anna.post(f"/api/people/{anna_id_for_alice}/confirm").status_code == 204
+    # Joining again with the same code is refused: Anna is already paired with Alice.
+    rejoin = anna.post("/api/pairing/join", json={"code": code, "display_name": "x"})
+    assert rejoin.status_code == 409
 
     # --- T-15: "Is Anna OK?" ---------------------------------------------------------------
     assert anna.post("/api/me/check-in").status_code == 204
@@ -219,8 +226,8 @@ def _assert_relay_holds_only_ciphertext(world: World, code: str) -> None:
         if extra.exists():
             raw_file += extra.read_bytes()
 
-    # Offer, accept (twice: the replayed join), and 3 query/answer round trips.
-    assert len(rows) == 2 + 1 + 6
+    # Offer, accept, and 3 query/answer round trips.
+    assert len(rows) == 1 + 1 + 6
 
     forbidden_text = [
         "level", "reason", "normal", "active_as_usual", "asked_for_help", "not_enough_data",

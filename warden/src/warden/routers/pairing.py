@@ -1,7 +1,14 @@
 from fastapi import APIRouter, HTTPException, Request, status
 
-from warden.models import PairingJoinRequest, PairingStartRequest, PairingStartResponse, Peer
+from warden.models import (
+    PairingJoinRequest,
+    PairingStartRequest,
+    PairingStartResponse,
+    PairingStatusResponse,
+    Peer,
+)
 from warden.reassurance.service import (
+    AlreadyPaired,
     InvalidCode,
     PairingNotFound,
     RelayUnavailable,
@@ -20,6 +27,11 @@ async def start_pairing(body: PairingStartRequest, request: Request) -> PairingS
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
 
+@router.get("/api/pairing/{pairing_id}")
+async def pairing_status(pairing_id: str, request: Request) -> PairingStatusResponse:
+    return await get_reassurance(request).pairing_status(pairing_id)
+
+
 @router.post("/api/pairing/join")
 async def join_pairing(body: PairingJoinRequest, request: Request) -> Peer:
     try:
@@ -28,7 +40,7 @@ async def join_pairing(body: PairingJoinRequest, request: Request) -> Peer:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     except PairingNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-    except SelfPairing as exc:
+    except (SelfPairing, AlreadyPaired) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except RelayUnavailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc

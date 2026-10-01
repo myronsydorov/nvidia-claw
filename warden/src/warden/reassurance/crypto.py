@@ -63,5 +63,15 @@ def pairing_proof(key: bytes, offerer: bytes, joiner: bytes) -> str:
     return blake2b(offerer + joiner, key=key, digest_size=32, person=b"custody-pairprf").hexdigest()
 
 
+def fingerprint(a: bytes, b: bytes, pair_nonce: bytes) -> str:
+    """8 digits both sides compute alike (keys sorted), e.g. "4821 0937". `pair_nonce` is
+    the joiner's fresh random value from the sealed accept, so someone racing the real
+    joiner with an overheard code can't precompute a key whose number matches."""
+    low, high = sorted((a, b))
+    digest = blake2b(low + high + pair_nonce, digest_size=8, person=b"custody-fpr").digest()
+    digits = f"{int.from_bytes(digest, 'big') % 10**8:08d}"
+    return f"{digits[:4]} {digits[4:]}"
+
+
 def proof_matches(expected: str, given: str) -> bool:
     return hmac.compare_digest(expected.encode(), given.encode())
