@@ -21,6 +21,7 @@ def test_adapter_declares_one_endpoint_with_no_secrets() -> None:
 def test_parse_forecast_fixture() -> None:
     raw = load_json_fixture("weather_openmeteo", "forecast.json")
     assert parse(raw) == {
+        "hourly": [],  # this older fixture has no hourly block
         "current": {
             "time": "2026-09-30T10:00",
             "temperature_c": 14.2,
@@ -55,3 +56,23 @@ def test_policy_snapshot_has_no_wildcards() -> None:
     snapshot = _SNAPSHOT_PATH.read_text()
     assert "*" not in snapshot
     assert "?" not in snapshot
+
+
+
+def test_parse_hourly_gives_berlin_times_with_their_offset() -> None:
+    # Shape of Open-Meteo's answer with timezone=Europe/Berlin (recorded 2026-10-02, trimmed).
+    raw = {
+        "utc_offset_seconds": 7200,
+        "hourly": {
+            "time": ["2026-10-02T16:00", "2026-10-02T17:00"],
+            "precipitation": [0.0, 1.2],
+            "precipitation_probability": [10, 65],
+            "weather_code": [3, 61],
+        },
+    }
+    assert parse(raw)["hourly"] == [
+        {"time": "2026-10-02T16:00+02:00", "precipitation_mm": 0.0,
+         "precipitation_probability": 10, "weather_code": 3},
+        {"time": "2026-10-02T17:00+02:00", "precipitation_mm": 1.2,
+         "precipitation_probability": 65, "weather_code": 61},
+    ]  # fmt: skip

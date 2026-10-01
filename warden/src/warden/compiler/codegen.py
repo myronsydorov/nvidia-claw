@@ -69,10 +69,13 @@ Adapters (from watcher_runtime.adapters import <name>); each has fetch(...) and 
       Write STOP_ID = "BVG_STOP_ID" exactly; the Warden puts in the real stop id. Without
       `when` you get the next few minutes only; to cover a later trip pass when=<ISO UTC time
       to start from> and duration_min=<1..180>. Times are ISO strings with an offset.
-  weather_openmeteo.fetch(latitude: float, longitude: float) -> {"current": {"time",
-      "temperature_c", "precipitation_mm", "weather_code"}, "daily": [{"date" (YYYY-MM-DD),
+  weather_openmeteo.fetch(latitude: float, longitude: float) -> {"hourly": [{"time" (ISO,
+      Berlin time with offset), "precipitation_mm", "precipitation_probability" (0-100),
+      "weather_code"}] (next 48 hours), "current": {"time", "temperature_c",
+      "precipitation_mm", "weather_code"}, "daily": [{"date" (YYYY-MM-DD),
       "temperature_max_c", "temperature_min_c", "precipitation_mm", "weather_code"}]}
-      (7-day forecast; WMO weather codes: 51-67 and 80-82 rain, 71-77 snow, 95-99 storm)
+      (7-day daily forecast; WMO weather codes: 51-67 and 80-82 rain, 71-77 snow, 95-99
+      storm; for a time window use "hourly" and compare with harness.parse_time)
   flight_status.fetch(icao24: str) -> {"found": bool, "callsign", "origin_country",
       "latitude", "longitude", "baro_altitude_m", "on_ground", "velocity_ms"}
       (icao24 is the aircraft's 24-bit hex transponder address, e.g. "3c6444")
