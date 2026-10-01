@@ -26,6 +26,10 @@ MAX_ADAPTERS = 3
 MIN_INTERVAL_S = 300
 MAX_INTERVAL_S = 86400
 
+# transit_bvg: the model names the stop as the person wrote it; the Warden resolves the real id
+# (adapters.bvg_lookup) and swaps it in for this placeholder in run.py. It never writes an id.
+STOP_PLACEHOLDER = "BVG_STOP_ID"
+
 # The parameters the model may give each factory adapter, and the permission-card
 # `why` we attach. Fixed adapters take no parameters.
 _FACTORY_PARAMS: dict[str, tuple[str, ...]] = {
@@ -59,8 +63,12 @@ Adapters (from watcher_runtime.adapters import <name>); each has fetch(...) and 
   parcel_dhl.fetch(tracking_number: str) -> {"found": bool, "id", "status_code",
       "status", "description", "estimated_delivery", "delivered": bool}
       (the adapter handles its own API key; watchers never see secrets)
-  transit_bvg.fetch(stop_id: str) -> {"departures": [{"line", "direction", "when",
-      "delay_s", "platform", "cancelled": bool}]}   (stop_id: numeric BVG/VBB stop id)
+  transit_bvg.fetch(stop_id: str, when=None, duration_min=None) -> {"departures": [{"line",
+      "direction", "when", "planned_when", "delay_s" (int, 0 if unknown), "platform",
+      "cancelled": bool}]}
+      Write STOP_ID = "BVG_STOP_ID" exactly; the Warden puts in the real stop id. Without
+      `when` you get the next few minutes only; to cover a later trip pass when=<ISO UTC time
+      to start from> and duration_min=<1..180>. Times are ISO strings with an offset.
   weather_openmeteo.fetch(latitude: float, longitude: float) -> {"current": {"time",
       "temperature_c", "precipitation_mm", "weather_code"}, "daily": [{"date" (YYYY-MM-DD),
       "temperature_max_c", "temperature_min_c", "precipitation_mm", "weather_code"}]}
@@ -104,10 +112,17 @@ else:
 ```"""
 
 
+_PROMPT_PARAMS = {
+    "transit_bvg": 'stop (the stop name exactly as the person wrote it), line (e.g. "S7"; '
+    "optional)",
+}
+
+
 def _catalogue() -> str:
     lines = []
     for info in ADAPTER_CATALOGUE.values():
-        params = ", ".join(_FACTORY_PARAMS.get(info.name, ())) or "none"
+        params = _PROMPT_PARAMS.get(info.name) or ", ".join(_FACTORY_PARAMS.get(info.name, ()))
+        params = params or "none"
         lines.append(f"- {info.name}: {info.description}. params: {params}")
     return "\n".join(lines)
 
@@ -135,7 +150,9 @@ Hard rules (a static checker rejects anything else):
   The first run has no saved state and must still emit "ok" or a real answer.
 - Stay calm and brief in summaries. No "check again" suggestions.
 - interval_s: 300..86400 seconds; check no more often than the worry needs.
-- Never invent a URL, tracking number, stop or transponder code. If the worry lacks one the
+- Times the person gives are Europe/Berlin local time; the deadline you get is already UTC.
+- Never invent a URL, tracking number, stop id or transponder code (BVG stops: give the stop
+  name in the plan and use STOP_ID = "BVG_STOP_ID" in run.py). If the worry lacks one the
   adapter needs, answer ONLY with a json block naming that adapter, and no python block:
   ```json
   {{"adapters": [], "missing": "ics_calendar"}}
@@ -176,7 +193,8 @@ _ASK: dict[str, str] = {
     "rss": "Send me the link to the feed and I'll watch it.",
     "http_json": "Send me the link to the data and I'll watch it.",
     "parcel_dhl": "Send me the tracking number and I'll watch it.",
-    "transit_bvg": "Tell me which stop (or its BVG stop number) and I'll watch it.",
+    "transit_bvg": "I couldn't find that stop. Tell me its exact name (as on the BVG app) "
+    "and I'll watch it.",
     "flight_status": "Send me the plane's transponder code (ICAO24) and I'll watch it.",
     "weather_openmeteo": "Tell me the place and I'll watch the forecast.",
 }
@@ -229,6 +247,48 @@ def _check_inputs_given(plan: Plan, worry_text: str) -> None:
             raise MissingInput(item.name)
 
 
+def stop_queries(content: str) -> list[tuple[str, str | None]]:
+    """The (stop name, line) pairs a plan asks the Warden to look up; [] if none or unparseable."""
+    try:
+        plan, _ = parse_answer(content)
+    except (CodegenError, MissingInput):
+        return []
+    queries = []
+    for item in plan.adapters:
+        stop, line = item.params.get("stop"), item.params.get("line")
+        if item.name == "transit_bvg" and isinstance(stop, str) and stop.strip():
+            queries.append((stop.strip(), line.strip() if isinstance(line, str) else None))
+    return queries
+
+
+def _pin_stops(
+    plan: Plan, code: str, worry_text: str, stop_ids: dict[tuple[str, str | None], str]
+) -> str:
+    """Turn transit_bvg's `stop` name into the looked-up id, in the plan and in run.py."""
+    for item in plan.adapters:
+        if item.name != "transit_bvg":
+            continue
+        params = item.params
+        if "stop_id" in params:
+            # Only an id the person wrote themselves; never one from the model's memory.
+            if set(params) != {"stop_id"} or str(params["stop_id"]).strip() not in worry_text:
+                raise MissingInput("transit_bvg")
+            continue
+        stop, line = params.get("stop"), params.get("line")
+        if set(params) - {"stop", "line"} or not isinstance(stop, str) or not stop.strip():
+            raise CodegenError('transit_bvg takes params {"stop": "<name>", "line": "<line>"}')
+        if stop.strip().lower() not in worry_text.lower():
+            raise MissingInput("transit_bvg")  # a stop the person didn't name
+        key = (stop.strip(), line.strip() if isinstance(line, str) else None)
+        if key not in stop_ids:
+            raise MissingInput("transit_bvg")  # the lookup found no such stop (for that line)
+        if not re.search(rf"[\"']{STOP_PLACEHOLDER}[\"']", code):
+            raise CodegenError(f'run.py must set STOP_ID = "{STOP_PLACEHOLDER}" exactly')
+        code = re.sub(rf"([\"']){STOP_PLACEHOLDER}([\"'])", rf"\g<1>{stop_ids[key]}\g<2>", code)
+        item.params = {"stop_id": stop_ids[key]}
+    return code
+
+
 def resolve(plan: Plan) -> list[Adapter]:
     adapters: list[Adapter] = []
     for item in plan.adapters:
@@ -259,9 +319,15 @@ def resolve(plan: Plan) -> list[Adapter]:
     return adapters
 
 
-def build(content: str, worry_text: str) -> Generated:
-    """Raises MissingInput (park and ask) or CodegenError (feed back and retry)."""
+def build(
+    content: str, worry_text: str, stop_ids: dict[tuple[str, str | None], str] | None = None
+) -> Generated:
+    """Raises MissingInput (park and ask) or CodegenError (feed back and retry).
+
+    `stop_ids` holds the Warden's lookups for `stop_queries(content)`; a query missing from it
+    means no such stop was found."""
     plan, code = parse_answer(content)
+    code = _pin_stops(plan, code, worry_text, stop_ids or {})
     _check_inputs_given(plan, worry_text)
     adapters = resolve(plan)
     interval = min(max(plan.interval_s, MIN_INTERVAL_S), MAX_INTERVAL_S)

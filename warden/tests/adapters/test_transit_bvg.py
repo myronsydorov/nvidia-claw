@@ -36,6 +36,7 @@ def test_parse_summarizes_departures_from_fixture() -> None:
                 "line": "U2",
                 "direction": "Pankow",
                 "when": "2026-09-30T10:15:00+02:00",
+                "planned_when": "2026-09-30T10:14:00+02:00",
                 "delay_s": 60,
                 "platform": "2",
                 "cancelled": False,
@@ -43,8 +44,10 @@ def test_parse_summarizes_departures_from_fixture() -> None:
             {
                 "line": "M5",
                 "direction": "Hackescher Markt",
-                "when": None,
-                "delay_s": None,
+                # Cancelled: no realtime `when`, so the planned time; no delay data -> 0.
+                "when": "2026-09-30T10:18:00+02:00",
+                "planned_when": "2026-09-30T10:18:00+02:00",
+                "delay_s": 0,
                 "platform": "1",
                 "cancelled": True,
             },

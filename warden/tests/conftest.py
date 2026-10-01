@@ -27,6 +27,11 @@ def warden_test_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
         return ["93.184.215.14"]  # no live DNS in unit tests; every host looks public
 
     monkeypatch.setattr("warden.compiler.hosts.resolve", public_only)
+
+    async def no_bvg(path: str, params: dict[str, str]) -> list[object]:
+        return []  # no live BVG lookups in unit tests; tests that need one bring a fixture
+
+    monkeypatch.setattr("warden.adapters.bvg_lookup.fetch", no_bvg)
     with tempfile.TemporaryDirectory() as tmp:
         db_path = f"{tmp}/warden-test.db"
         monkeypatch.setenv("WARDEN_DB_PATH", db_path)

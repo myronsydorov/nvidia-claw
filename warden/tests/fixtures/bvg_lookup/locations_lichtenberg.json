@@ -1,0 +1,870 @@
+[
+ {
+  "type": "stop",
+  "id": "900160004",
+  "name": "S+U Lichtenberg Bhf (Berlin)",
+  "lines": [
+   {
+    "name": "S3",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S7",
+    "product": "suburban"
+   },
+   {
+    "name": "S7",
+    "product": "suburban"
+   },
+   {
+    "name": "S9",
+    "product": "suburban"
+   },
+   {
+    "name": "S75",
+    "product": "suburban"
+   },
+   {
+    "name": "S75",
+    "product": "suburban"
+   },
+   {
+    "name": "U5",
+    "product": "subway"
+   },
+   {
+    "name": "21",
+    "product": "tram"
+   },
+   {
+    "name": "37",
+    "product": "tram"
+   },
+   {
+    "name": "M8",
+    "product": "tram"
+   },
+   {
+    "name": "108",
+    "product": "bus"
+   },
+   {
+    "name": "240",
+    "product": "bus"
+   },
+   {
+    "name": "256",
+    "product": "bus"
+   },
+   {
+    "name": "296",
+    "product": "bus"
+   },
+   {
+    "name": "N5",
+    "product": "bus"
+   },
+   {
+    "name": "N50",
+    "product": "bus"
+   },
+   {
+    "name": "N94",
+    "product": "bus"
+   },
+   {
+    "name": "S7",
+    "product": "bus"
+   },
+   {
+    "name": null,
+    "product": "express"
+   },
+   {
+    "name": "FEX",
+    "product": "regional"
+   },
+   {
+    "name": "HBX",
+    "product": "regional"
+   },
+   {
+    "name": "RB12",
+    "product": "regional"
+   },
+   {
+    "name": "RB24",
+    "product": "regional"
+   },
+   {
+    "name": "RB25",
+    "product": "regional"
+   },
+   {
+    "name": "RB26",
+    "product": "regional"
+   },
+   {
+    "name": "RB32",
+    "product": "regional"
+   },
+   {
+    "name": "RB54",
+    "product": "regional"
+   },
+   {
+    "name": "RE1",
+    "product": "regional"
+   },
+   {
+    "name": "RE2",
+    "product": "regional"
+   },
+   {
+    "name": "RE5",
+    "product": "regional"
+   },
+   {
+    "name": "RE7",
+    "product": "regional"
+   },
+   {
+    "name": "RE8",
+    "product": "regional"
+   }
+  ]
+ },
+ {
+  "type": "stop",
+  "id": "900160544",
+  "name": "Rathaus Lichtenberg (Berlin)",
+  "lines": [
+   {
+    "name": "16",
+    "product": "tram"
+   },
+   {
+    "name": "M13",
+    "product": "tram"
+   }
+  ]
+ },
+ {
+  "type": "stop",
+  "id": "900160522",
+  "name": "Betriebshof Lichtenberg (Berlin)",
+  "lines": [
+   {
+    "name": "18",
+    "product": "tram"
+   },
+   {
+    "name": "21",
+    "product": "tram"
+   },
+   {
+    "name": "27",
+    "product": "tram"
+   },
+   {
+    "name": "37",
+    "product": "tram"
+   },
+   {
+    "name": "M4",
+    "product": "tram"
+   },
+   {
+    "name": "M5",
+    "product": "tram"
+   },
+   {
+    "name": "M8",
+    "product": "tram"
+   },
+   {
+    "name": "M10",
+    "product": "tram"
+   },
+   {
+    "name": "M13",
+    "product": "tram"
+   },
+   {
+    "name": "240",
+    "product": "bus"
+   },
+   {
+    "name": "256",
+    "product": "bus"
+   },
+   {
+    "name": "M8",
+    "product": "bus"
+   },
+   {
+    "name": "N50",
+    "product": "bus"
+   },
+   {
+    "name": "N56",
+    "product": "bus"
+   }
+  ]
+ },
+ {
+  "type": "stop",
+  "id": "900160020",
+  "name": "S+U Lichtenberg Bhf/Siegfriedstr. (Berlin)",
+  "lines": [
+   {
+    "name": "S3",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S7",
+    "product": "suburban"
+   },
+   {
+    "name": "S7",
+    "product": "suburban"
+   },
+   {
+    "name": "S9",
+    "product": "suburban"
+   },
+   {
+    "name": "S75",
+    "product": "suburban"
+   },
+   {
+    "name": "S75",
+    "product": "suburban"
+   },
+   {
+    "name": "U5",
+    "product": "subway"
+   },
+   {
+    "name": "21",
+    "product": "tram"
+   },
+   {
+    "name": "37",
+    "product": "tram"
+   },
+   {
+    "name": "M8",
+    "product": "tram"
+   },
+   {
+    "name": "108",
+    "product": "bus"
+   },
+   {
+    "name": "240",
+    "product": "bus"
+   },
+   {
+    "name": "256",
+    "product": "bus"
+   },
+   {
+    "name": "296",
+    "product": "bus"
+   },
+   {
+    "name": "N5",
+    "product": "bus"
+   },
+   {
+    "name": "N50",
+    "product": "bus"
+   },
+   {
+    "name": "N94",
+    "product": "bus"
+   },
+   {
+    "name": "S7",
+    "product": "bus"
+   },
+   {
+    "name": null,
+    "product": "express"
+   },
+   {
+    "name": "FEX",
+    "product": "regional"
+   },
+   {
+    "name": "HBX",
+    "product": "regional"
+   },
+   {
+    "name": "RB12",
+    "product": "regional"
+   },
+   {
+    "name": "RB24",
+    "product": "regional"
+   },
+   {
+    "name": "RB25",
+    "product": "regional"
+   },
+   {
+    "name": "RB26",
+    "product": "regional"
+   },
+   {
+    "name": "RB32",
+    "product": "regional"
+   },
+   {
+    "name": "RB54",
+    "product": "regional"
+   },
+   {
+    "name": "RE1",
+    "product": "regional"
+   },
+   {
+    "name": "RE2",
+    "product": "regional"
+   },
+   {
+    "name": "RE5",
+    "product": "regional"
+   },
+   {
+    "name": "RE7",
+    "product": "regional"
+   },
+   {
+    "name": "RE8",
+    "product": "regional"
+   }
+  ]
+ },
+ {
+  "type": "stop",
+  "id": "900160021",
+  "name": "S+U Lichtenberg Bhf/Gudrunstr. (Berlin)",
+  "lines": [
+   {
+    "name": "S3",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S7",
+    "product": "suburban"
+   },
+   {
+    "name": "S7",
+    "product": "suburban"
+   },
+   {
+    "name": "S9",
+    "product": "suburban"
+   },
+   {
+    "name": "S75",
+    "product": "suburban"
+   },
+   {
+    "name": "S75",
+    "product": "suburban"
+   },
+   {
+    "name": "U5",
+    "product": "subway"
+   },
+   {
+    "name": "21",
+    "product": "tram"
+   },
+   {
+    "name": "37",
+    "product": "tram"
+   },
+   {
+    "name": "M8",
+    "product": "tram"
+   },
+   {
+    "name": "108",
+    "product": "bus"
+   },
+   {
+    "name": "240",
+    "product": "bus"
+   },
+   {
+    "name": "256",
+    "product": "bus"
+   },
+   {
+    "name": "296",
+    "product": "bus"
+   },
+   {
+    "name": "N5",
+    "product": "bus"
+   },
+   {
+    "name": "N50",
+    "product": "bus"
+   },
+   {
+    "name": "N94",
+    "product": "bus"
+   },
+   {
+    "name": "S7",
+    "product": "bus"
+   },
+   {
+    "name": null,
+    "product": "express"
+   },
+   {
+    "name": "FEX",
+    "product": "regional"
+   },
+   {
+    "name": "HBX",
+    "product": "regional"
+   },
+   {
+    "name": "RB12",
+    "product": "regional"
+   },
+   {
+    "name": "RB24",
+    "product": "regional"
+   },
+   {
+    "name": "RB25",
+    "product": "regional"
+   },
+   {
+    "name": "RB26",
+    "product": "regional"
+   },
+   {
+    "name": "RB32",
+    "product": "regional"
+   },
+   {
+    "name": "RB54",
+    "product": "regional"
+   },
+   {
+    "name": "RE1",
+    "product": "regional"
+   },
+   {
+    "name": "RE2",
+    "product": "regional"
+   },
+   {
+    "name": "RE5",
+    "product": "regional"
+   },
+   {
+    "name": "RE7",
+    "product": "regional"
+   },
+   {
+    "name": "RE8",
+    "product": "regional"
+   }
+  ]
+ },
+ {
+  "type": "stop",
+  "id": "900160545",
+  "name": "Lichtenberger Br\u00fccke Nord (Berlin)",
+  "lines": [
+   {
+    "name": "S3",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S7",
+    "product": "suburban"
+   },
+   {
+    "name": "S7",
+    "product": "suburban"
+   },
+   {
+    "name": "S9",
+    "product": "suburban"
+   },
+   {
+    "name": "S75",
+    "product": "suburban"
+   },
+   {
+    "name": "S75",
+    "product": "suburban"
+   },
+   {
+    "name": "U5",
+    "product": "subway"
+   },
+   {
+    "name": "21",
+    "product": "tram"
+   },
+   {
+    "name": "37",
+    "product": "tram"
+   },
+   {
+    "name": "M8",
+    "product": "tram"
+   },
+   {
+    "name": "108",
+    "product": "bus"
+   },
+   {
+    "name": "240",
+    "product": "bus"
+   },
+   {
+    "name": "256",
+    "product": "bus"
+   },
+   {
+    "name": "296",
+    "product": "bus"
+   },
+   {
+    "name": "N5",
+    "product": "bus"
+   },
+   {
+    "name": "N50",
+    "product": "bus"
+   },
+   {
+    "name": "N94",
+    "product": "bus"
+   },
+   {
+    "name": "S7",
+    "product": "bus"
+   },
+   {
+    "name": null,
+    "product": "express"
+   },
+   {
+    "name": "FEX",
+    "product": "regional"
+   },
+   {
+    "name": "HBX",
+    "product": "regional"
+   },
+   {
+    "name": "RB12",
+    "product": "regional"
+   },
+   {
+    "name": "RB24",
+    "product": "regional"
+   },
+   {
+    "name": "RB25",
+    "product": "regional"
+   },
+   {
+    "name": "RB26",
+    "product": "regional"
+   },
+   {
+    "name": "RB32",
+    "product": "regional"
+   },
+   {
+    "name": "RB54",
+    "product": "regional"
+   },
+   {
+    "name": "RE1",
+    "product": "regional"
+   },
+   {
+    "name": "RE2",
+    "product": "regional"
+   },
+   {
+    "name": "RE5",
+    "product": "regional"
+   },
+   {
+    "name": "RE7",
+    "product": "regional"
+   },
+   {
+    "name": "RE8",
+    "product": "regional"
+   }
+  ]
+ },
+ {
+  "type": "stop",
+  "id": "900160548",
+  "name": "Lichtenberger Br\u00fccke S\u00fcd (Berlin)",
+  "lines": [
+   {
+    "name": "S3",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S5",
+    "product": "suburban"
+   },
+   {
+    "name": "S7",
+    "product": "suburban"
+   },
+   {
+    "name": "S7",
+    "product": "suburban"
+   },
+   {
+    "name": "S9",
+    "product": "suburban"
+   },
+   {
+    "name": "S75",
+    "product": "suburban"
+   },
+   {
+    "name": "S75",
+    "product": "suburban"
+   },
+   {
+    "name": "U5",
+    "product": "subway"
+   },
+   {
+    "name": "21",
+    "product": "tram"
+   },
+   {
+    "name": "37",
+    "product": "tram"
+   },
+   {
+    "name": "M8",
+    "product": "tram"
+   },
+   {
+    "name": "108",
+    "product": "bus"
+   },
+   {
+    "name": "240",
+    "product": "bus"
+   },
+   {
+    "name": "256",
+    "product": "bus"
+   },
+   {
+    "name": "296",
+    "product": "bus"
+   },
+   {
+    "name": "N5",
+    "product": "bus"
+   },
+   {
+    "name": "N50",
+    "product": "bus"
+   },
+   {
+    "name": "N94",
+    "product": "bus"
+   },
+   {
+    "name": "S7",
+    "product": "bus"
+   },
+   {
+    "name": null,
+    "product": "express"
+   },
+   {
+    "name": "FEX",
+    "product": "regional"
+   },
+   {
+    "name": "HBX",
+    "product": "regional"
+   },
+   {
+    "name": "RB12",
+    "product": "regional"
+   },
+   {
+    "name": "RB24",
+    "product": "regional"
+   },
+   {
+    "name": "RB25",
+    "product": "regional"
+   },
+   {
+    "name": "RB26",
+    "product": "regional"
+   },
+   {
+    "name": "RB32",
+    "product": "regional"
+   },
+   {
+    "name": "RB54",
+    "product": "regional"
+   },
+   {
+    "name": "RE1",
+    "product": "regional"
+   },
+   {
+    "name": "RE2",
+    "product": "regional"
+   },
+   {
+    "name": "RE5",
+    "product": "regional"
+   },
+   {
+    "name": "RE7",
+    "product": "regional"
+   },
+   {
+    "name": "RE8",
+    "product": "regional"
+   }
+  ]
+ },
+ {
+  "type": "stop",
+  "id": "900205399",
+  "name": "Lichtenberg (OPR)",
+  "lines": [
+   {
+    "name": "777",
+    "product": "bus"
+   },
+   {
+    "name": "778",
+    "product": "bus"
+   }
+  ]
+ }
+]

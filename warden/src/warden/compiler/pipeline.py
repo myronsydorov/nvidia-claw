@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from warden.adapters import bvg_lookup
 from warden.adapters.base import Adapter
 from warden.compiler import codegen, gate, guard, hosts
 from warden.compiler.dryrun import dry_run
@@ -155,8 +156,14 @@ class Compiler:
 
         Raises codegen.MissingInput when the worry lacks what the watcher needs.
         """
+        # Stop names → real BVG ids, looked up now; never ids from the model's memory.
+        stop_ids: dict[tuple[str, str | None], str] = {}
+        for stop, line in codegen.stop_queries(answer):
+            found = await bvg_lookup.find_stop(stop, line)
+            if found is not None:
+                stop_ids[(stop, line)] = found.id
         try:
-            built = codegen.build(answer, worry_text)
+            built = codegen.build(answer, worry_text, stop_ids)
         except codegen.CodegenError as exc:
             # Our message, but it can quote model-chosen names and URLs: wrap it.
             return "Problem:\n" + guard.untrusted(str(exc), "checker", max_chars=500), None

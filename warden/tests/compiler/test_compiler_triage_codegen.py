@@ -140,7 +140,9 @@ async def test_triage_prompt_wraps_the_worry_text_as_untrusted() -> None:
 
 @pytest.mark.parametrize("case", [0, 1, 2])
 def test_recorded_codegen_answers_build(case: int) -> None:
-    generated = build(REPLAY[case]["codegen"], "")  # fixed adapters: no URL to find
+    # Fixed adapters need no URL; the transit case's stop id must be in the person's words.
+    text = "Is my S1 at BVG stop 900100003 cancelled?" if case == 1 else ""
+    generated = build(REPLAY[case]["codegen"], text)
     assert generated.adapters and generated.code.startswith("from watcher_runtime import harness")
 
 
