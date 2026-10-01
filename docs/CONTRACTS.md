@@ -81,13 +81,20 @@ v1 adapters: `http_json`, `rss`, `web_diff`, `imap_search`, `ics_calendar`, `wea
 ## 2. Reassurance (Layer 2)
 
 ### Pairing
-A one-time 8-character code on device A is typed on device B. The devices swap X25519 public keys through the relay. Stored as `Peer{ id: p_<ulid>, display_name, public_key, paired_at }`.
+A one-time 8-character code (Crockford base32, 10-minute expiry) on device A is typed on device B. The devices swap X25519 public keys through the relay. Stored as `Peer{ id: p_<ulid>, display_name, public_key, paired_at }`. Display names are local: each side names the other, and no name crosses the relay.
+1. A: `POST /api/pairing {display_name}` → `{code, expires_at}`. A derives `(mailbox_id, key) = Argon2id(code)` and posts a SecretBox'd `{ "t": "pair_offer", "public_key", "expires_at" }` to `mailbox_id`. A stores the derived key, never the code.
+2. B: `POST /api/pairing/join {code, display_name}` → `Peer`. B opens the offer, saves A, and posts a sealed box `{ "t": "pair_accept", "public_key", "proof" }` to A's mailbox, where `proof` = keyed BLAKE2b(key, A_pk ‖ B_pk).
+3. A's mailbox poller checks the proof against its live pairings, saves B, and deletes the pairing, so the code works once.
+
+A new peer gets a default SharingRule on both sides: `{ allowed_questions: ["ok"], allowed_levels: all four, active: true }`.
+
+Key ids (mailbox addresses) are BLAKE2b-128 hex of the public key. Messages between paired peers are authenticated `crypto_box` (X25519 + XSalsa20-Poly1305; see the ADR-0004 amendment); every plaintext envelope rejects unknown fields.
 
 ### SharingRule (owned by the person being asked about)
 `{ peer_id, allowed_questions: ["ok", "home"], allowed_levels: ["normal","unusual","help","unknown"], active: true }`
 
 ### ReassuranceQuery (encrypted to the peer)
-`{ "q": "ok | home", "from": "p_…", "nonce": "…", "ts": "…" }`
+`{ "t": "query", "q": "ok | home", "nonce": "<32 hex>", "ts": "…" }`. There is no `from`: peer ids are local to each Warden, so the sender is identified by the authenticated box and `sender_key_id`. A query from an unpaired key, one that fails authentication, one older than 5 minutes, or a replayed nonce is dropped, and so is anything over 30 queries per peer per hour. Every other query is written to the owner's question log.
 
 ### ReassuranceAnswer (encrypted back), fixed vocabulary only
 ```json
@@ -95,10 +102,17 @@ A one-time 8-character code on device A is typed on device B. The devices swap X
   "reason": "active_as_usual | quieter_than_usual | do_not_disturb | asked_for_help | not_enough_data | arrived | not_arrived",
   "ts": "…" }
 ```
-Any field or value outside this vocabulary gets **rejected by the sender's own Warden before encryption**.
+Any field or value outside this vocabulary gets **rejected by the sender's own Warden before encryption**: nothing is sent, and the log records `unknown`. It travels as `{ "t": "answer", "re": "<the query's nonce>", "answer": ReassuranceAnswer }`, and the asker re-validates it with the same strict model. The owner's SharingRule turns anything it doesn't allow (inactive, question or level not allowed) into `unknown / not_enough_data`. In v1, `home` always answers `unknown / not_enough_data`: there is no arrival signal without location.
+
+### "Normal day" signal (v1, computed locally)
+Inputs: computer activity (OS idle time) against hours learned over 14 days, a local .ics calendar's busy/free, the last check-in, and an explicit "I need help". Precedence: help → `help/asked_for_help`; check-in < 3 h → `normal/active_as_usual`; busy → `normal/do_not_disturb`; < 3 days of history → `unknown/not_enough_data`; active < 30 min → `normal/active_as_usual`; usually-active hour and idle ≥ 2 h → `unusual/quieter_than_usual`; otherwise `normal/active_as_usual`.
 
 ### PrivacyReceipt (shown in the app)
-`{ "bytes_sent": 212, "fields_shared": ["level","reason","ts"], "location_shared": false, "egress_log_ref": "…" }`
+`{ "bytes_sent": 212, "fields_shared": ["level","reason","ts"], "location_shared": false, "egress_log_ref": "relay:<message id>" }`. `bytes_sent` is the exact size of the answer's POST body to the relay (canonical JSON `{"ciphertext","sender_key_id"}`).
+
+### Pairing and "me" shapes (T-14/T-15; zod mirrors land with the app in T-17)
+- `PairingStartRequest { display_name: str(1..64) }` → `PairingStartResponse { code: str(8, Crockford), expires_at: datetime }`
+- `PairingJoinRequest { code: str (case and dashes ignored), display_name: str(1..64) }` → `Peer`
 
 ### PeopleListItem (items of `GET /api/people`)
 `{ "peer": Peer, "last_answer": ReassuranceAnswer | null, "last_answer_at": datetime | null }`
@@ -116,8 +130,11 @@ Any field or value outside this vocabulary gets **rejected by the sender's own W
 `{ "endpoint": str, "keys": { "p256dh": str, "auth": str } }`
 
 ### Relay API (ciphertext only)
-- `POST /v1/mailbox/{recipient_key_id}` with body `{ ciphertext, sender_key_id }` → `202`
-- `GET /v1/mailbox/{my_key_id}?since=` → `[ { id, ciphertext, sender_key_id, ts } ]`
+- `POST /v1/mailbox/{recipient_key_id}` with body `{ ciphertext, sender_key_id }` → `202 { id }`
+- `GET /v1/mailbox/{my_key_id}?since=<id>` → `[ { id, ciphertext, sender_key_id, ts } ]` (ids are increasing integers; `since` is exclusive)
+- `GET /v1/health` → `{ "status": "ok" }`
+
+Key ids are 32 lowercase hex chars. The ciphertext is standard base64, at most 4 KiB decoded (larger → `413`), and unknown body fields → `422`. The relay stores the ciphertext as bytes, keeps a message for 24 h, and keeps at most 200 per mailbox and 50k in total (`507` when full). A POST needs a `Content-Length` of at most 16 KiB (`411` / `413`). There is no mailbox auth (THREAT_MODEL A6).
 
 ## 3. Warden app API (`/api`, bearer device token)
 | method | path | purpose |
@@ -130,7 +147,12 @@ Any field or value outside this vocabulary gets **rejected by the sender's own W
 | POST | `/api/worries/{id}/let-go` | user closes it → `resolved`; returns WorryDetail |
 | POST | `/api/worries/{id}/outcome` | `{ fear_came_true: bool }` → returns WorryDetail |
 | GET | `/api/people` | list[PeopleListItem] — peers + last answer |
-| POST | `/api/people/{peer_id}/ask` | `{ q }` → AskPeerResponse (ReassuranceAnswer + PrivacyReceipt) |
+| POST | `/api/people/{peer_id}/ask` | `{ q }` → AskPeerResponse (ReassuranceAnswer + PrivacyReceipt); `404` unknown peer, `503` no relay / relay down, `504` no answer in time (never a made-up answer), `502` the peer's answer failed our vocabulary check |
+| POST | `/api/pairing` | PairingStartRequest → PairingStartResponse; `503` without a relay |
+| POST | `/api/pairing/join` | PairingJoinRequest → Peer; `422` malformed code, `404` no live pairing, `409` own code, `503` without a relay |
+| POST | `/api/me/check-in` | "I'm OK" → `204`; clears "I need help" |
+| POST/DELETE | `/api/me/help` | set / clear "I need help" → `204` |
+| GET | `/api/me/signal` | ReassuranceAnswer: what an allowed peer asking "ok?" would get right now |
 | GET/PUT | `/api/sharing-rules` | SharingRulesResponse — what others may ask about me; plus the log of questions |
 | GET | `/api/ledger` | LedgerResponse — stats-wall aggregates |
 | GET | `/api/events` | server-sent events: `worry.updated`, `watcher.result`, `approval.needed`, `alert.act_now`, `peer.answer` |
@@ -144,4 +166,4 @@ All `/api/*` routes, including `/api/health`, require the bearer device token; a
 The brain **cannot** approve policies. Approval only ever comes from the human, in the app.
 
 ## 5. Ledger (`GET /api/ledger`)
-`{ worries_total, active, never_needed_you, needed_you, median_warning_lead_h, came_true_rate, came_true_by_type{}, watchers_built, sandboxes_live, endpoints_denied, peer_questions_answered, locations_shared: 0 }`
+`{ worries_total, active, never_needed_you, needed_you, median_warning_lead_h, came_true_rate, came_true_by_type{}, watchers_built, sandboxes_live, endpoints_denied, peer_questions_answered, locations_shared: 0 }` (`peer_questions_answered` = entries in my question log)

@@ -11,6 +11,7 @@ dependencies = [
     "python-ulid>=4.0.1",
     "pyyaml>=6.0",
     "httpx2>=0.1",  # NVIDIA Build client (T-09); same HTTP client as watcher_runtime
+    "pynacl>=1.6.2",
 ]
 
 [dependency-groups]

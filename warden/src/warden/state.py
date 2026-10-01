@@ -4,6 +4,7 @@ from fastapi import Request
 
 from warden.db import Store
 from warden.events import EventBus
+from warden.reassurance.service import Reassurance
 from warden.sandbox.driver import SandboxDriver
 
 
@@ -20,3 +21,8 @@ def get_events(request: Request) -> EventBus:
 def get_driver(request: Request) -> SandboxDriver:
     driver: SandboxDriver = request.app.state.driver
     return driver
+
+
+def get_reassurance(request: Request) -> Reassurance:
+    reassurance: Reassurance = request.app.state.reassurance
+    return reassurance

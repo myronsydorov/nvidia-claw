@@ -47,7 +47,7 @@ def test_ask_unknown_peer_404s(auth_headers: dict[str, str]) -> None:
     assert response.status_code == 404
 
 
-def test_ask_known_peer_returns_fixed_vocabulary_placeholder(
+def test_ask_without_a_relay_is_503_not_a_made_up_answer(
     auth_headers: dict[str, str], warden_test_environment: str
 ) -> None:
     seed_peer(warden_test_environment, _peer())
@@ -55,17 +55,9 @@ def test_ask_known_peer_returns_fixed_vocabulary_placeholder(
         response = client.post(
             f"/api/people/p_{PEER_ULID}/ask", json={"q": "ok"}, headers=auth_headers
         )
-        assert response.status_code == 200
-        body = response.json()
-        assert body["answer"]["level"] == "unknown"
-        assert body["answer"]["reason"] == "not_enough_data"
-        assert body["receipt"]["bytes_sent"] == 0
-        assert body["receipt"]["location_shared"] is False
-
-        # The peer's last_answer now reflects the ask.
+        assert response.status_code == 503
         listed = client.get("/api/people", headers=auth_headers).json()
-    assert listed[0]["last_answer"]["level"] == "unknown"
-    assert listed[0]["last_answer_at"] is not None
+    assert listed[0]["last_answer"] is None
 
 
 def test_ask_rejects_a_question_outside_the_fixed_vocabulary(

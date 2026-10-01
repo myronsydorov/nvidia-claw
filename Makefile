@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: setup dev lint typecheck test e2e eval-compiler spike
+.PHONY: setup dev relay lint typecheck test e2e eval-compiler spike
 
 setup:
 	uv sync --all-packages
@@ -18,12 +18,17 @@ dev:
 	pnpm -C app dev & \
 	wait
 
+# The L2 relay mailbox (ciphertext only). Point each Warden's RELAY_URL at it.
+relay:
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+	uv run --package relay uvicorn relay.app:app --host 127.0.0.1 --port 8100
+
 lint:
 	uv run ruff check .
 	pnpm -C app lint
 
 typecheck:
-	uv run mypy warden
+	uv run mypy warden relay
 	pnpm -C app typecheck
 
 test:

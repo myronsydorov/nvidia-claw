@@ -43,12 +43,35 @@ Status: `todo · doing · done · cut`. Every task has **acceptance criteria and
 ## Thu 1 Oct: L2, Ledger, push
 | ID | Owner | Task | Acceptance / verify | Status |
 |---|---|---|---|---|
-| T-14 | Claude | Relay (ciphertext-only mailbox) plus pairing with a one-time code | Relay database dump contains no plain text (test); pairing works between two local Wardens | todo |
-| T-15 | Claude | Reassurance: query/answer, vocabulary enforcement, sharing rules, "normal day" signal v1, privacy receipt | Answers outside the vocabulary are rejected (test); the receipt shows the bytes sent | todo |
+| T-14 | Claude | Relay (ciphertext-only mailbox) plus pairing with a one-time code | Relay database dump contains no plain text (test); pairing works between two local Wardens | done‡‡ |
+| T-15 | Claude | Reassurance: query/answer, vocabulary enforcement, sharing rules, "normal day" signal v1, privacy receipt | Answers outside the vocabulary are rejected (test); the receipt shows the bytes sent | done‡‡ |
 | T-16 | You | Second install on the Intel MacBook (Ubuntu) as "Anna" | "Is Anna OK?" answered end to end between the two machines | todo |
 | T-17 | Claude | App: People, sharing rules + question log, Ledger | Screenshots; Ledger numbers match `/api/ledger` | todo |
 | T-18 | Claude | Web push (VAPID keys) for act-now alerts and approvals | A push arrives on the installed phone app | todo |
 | T-19 | Claude | *Stretch, L3:* watcher bundle (code + policy + hash), publish/import, "Borrow a watcher" | An imported watcher runs with **exactly** its declared policy | todo |
+
+‡‡ T-14 + T-15 (backend only; app/ untouched). **Relay** (`relay/src/relay/app.py`, `make relay`): a FastAPI + SQLite mailbox that stores ciphertext as BLOBs.
+- Validation: key ids are 32 hex chars, the ciphertext is strict base64 ≤ 4 KiB (413), and unknown fields get a 422.
+- Limits: Content-Length ≤ 16 KiB checked before the body is read, 24 h TTL, 200 per mailbox, 50k global (507).
+- No mailbox auth (THREAT_MODEL A6).
+
+**Warden** `warden/src/warden/reassurance/`:
+- `keys` (X25519 identity in `WARDEN_KEY_PATH`, created 0600 and refused if group/other-readable).
+- `crypto`: authenticated `Box` between peers (**ADR-0004 amendment**: a sealed box can't say who asks, so sharing rules couldn't be enforced), a sealed box for the pairing accept, and a SecretBox under Argon2id(code) for the offer.
+- `vocabulary`: a strict `enforce` that runs before and after the sharing rule and always before encryption; the asker re-validates and answers 502 on junk.
+- `messages`: strict envelopes.
+- `signal` (v1 precedence in CONTRACTS §2) and `sources`: macOS `ioreg` / Linux `xprintidle` idle time sampled every 5 min, a local `.ics` file for busy/free, `CUSTODY_ACTIVITY=off`.
+- `service`: pairing, ask, mailbox poller, question log, replay/staleness guard, 30 queries per peer per hour.
+
+**New routes:** `POST /api/pairing`, `POST /api/pairing/join`, `POST /api/me/check-in`, `POST|DELETE /api/me/help`, `GET /api/me/signal`. Ask is now real: 404/503/504/502, never a made-up answer. Without `RELAY_URL` it returns 503, so **T-17 must handle that**. The ledger's `peer_questions_answered` = question-log size. Zod mirrors for the new pairing shapes are **deferred to T-17**.
+
+**Acceptance evidence:** `warden/tests/test_l2_end_to_end.py` starts the relay and two Wardens as separate uvicorn processes (own ports, DBs, keys, tokens). They pair with a one-time code; "ok?" → `normal/active_as_usual`; the receipt's `bytes_sent` equals the stored answer's POST body byte for byte; then help → `help/asked_for_help`, and a revoke → `unknown` (still logged). It then dumps the relay DB (raw file + WAL + `iterdump`): no vocabulary words, names, code or public keys (raw/b64/hex). Every blob opens with the right key, so the search ran over the real messages, and no process log contains the code, a name or an answer. `test_reassurance_vocabulary.py`: 15 out-of-vocabulary shapes rejected. With Bob's signal patched to junk, a spy on `seal_for_peer` shows nothing was encrypted and nothing was posted, while the question is still logged as `unknown`. A mutation check (gate disabled) → 21 failures.
+
+**Security-reviewer pass:** no invariant violations. Fixes applied: a malformed relay reply could kill the poller (now strict parsing + a guarded loop, regression-tested); relay body/global caps; a per-peer query cap; key-file mode check; expired pairings pruned on every poll.
+
+**Open, for T-17:** key-fingerprint confirmation on both screens (A7 limit), and an ask cooldown in the UI (A11).
+
+**Operational note for T-20:** keep the relay's DB file across restarts. Message ids restart if it is deleted, and Wardens' persisted cursors would then skip messages.
 
 ## Fri 2 Oct: ship
 | ID | Owner | Task | Acceptance / verify | Status |
