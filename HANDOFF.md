@@ -10,7 +10,7 @@ NemoClaw v0.0.124 · OpenShell 0.0.116 · OpenClaw v2026.7.1 · brain sandbox `c
 | B. T-02 gateway chat endpoint (loopback) | done |
 | C. T-04 OpenShell SandboxDriver | done (security-reviewed, hardened) |
 | D. Deploy (systemd + tailscale serve, T-20 restart.sh) | services + restart.sh done; **tailnet URL blocked on the owner** (enable Tailscale Serve) |
-| E. T-11 brain | todo |
+| E. T-11 brain | built and installed; **MCP hookup blocked on the same Tailscale Serve approval** |
 
 ## A. NemoClaw healthy: done
 `nemoclaw custody-brain status` (abridged):
@@ -109,6 +109,30 @@ Checks: `make lint` ✓ · `make typecheck` ✓ · `make test` 561 Python + 83 a
 [ 95s] HEALTHY in 95s (budget 300s)
 ```
 
+## E. T-11 brain: built; the last hop is blocked on Tailscale Serve
+- **Warden MCP server** (`warden/src/warden/mcp_server.py`) at `/mcp/`: Streamable HTTP, stateless JSON, official MCP SDK 2.2.0.
+  - **Tools:** the seven CONTRACTS §4 tools (`hand_over`, `list`, `get`, `let_go`, `record_outcome`, `ask_peer`, `ledger`). **There is no approval tool**, and the in-process dispatch can only reach an allowlist of `/api` routes; ids must fullmatch `w_<ulid>`/`p_<ulid>`.
+  - **Auth:** its own token, `WARDEN_MCP_TOKEN`, in `warden.env`. It must differ from the device token; the device token gets 401. Host headers outside the allowlist get 421.
+  - **Guarded output:** watcher results go through `guard.guard_watch_result` (`evidence.data` dropped). Timeline texts and `resolution` are wrapped in `<untrusted_data>`. Code and policy YAML are never returned.
+  - Tests: `warden/tests/test_mcp.py` (15).
+- **Brain** (installed by `scripts/install-brain.sh`, idempotent):
+  - the `custody` skill is in the sandbox, and `nemoclaw custody-brain skill list` shows it `✓ ready`;
+  - the standing orders are appended to the workspace `AGENTS.md` as a marked block (2 marker lines found).
+- **Live check on loopback** (the deployed Warden):
+```
+no token: 401
+device token: 401
+mcp token, tools: ['hand_over', 'list', 'get', 'let_go', 'record_outcome', 'ask_peer', 'ledger']
+list -> "summary": "<untrusted_data source=\"watcher_summary\" nonce=…>\nNo change in the school calendar.\n</untrusted_data …>"
+```
+- **Why blocked:** NemoClaw only registers HTTPS MCP servers (`nemoclaw … mcp add --url https://…`), and the sandbox can't reach host loopback. The clean route is the tailnet HTTPS name, which resolves to a CGNAT address and is admitted with `--trusted-private-host`; that needs Tailscale Serve. `scripts/install-brain.sh` stops at that step with the approval link (exit 2). After you approve Serve, re-running it does `tailscale serve /mcp`, then `nemoclaw custody-brain mcp add custody --url https://ubuntu-s-4vcpu-8gb-fra1.tail081ca8.ts.net/mcp/ --env CUSTODY_MCP_TOKEN --trusted-private-host …`. The token goes into OpenShell's provider store, and the sandbox sees only a placeholder.
+- **Security-reviewer pass on T-11:** no invariant violations. Fixed:
+  - (M1) `hand_over` over MCP refuses links and domains. Otherwise content the brain read could make a dry-run sandbox GET an attacker's host before any approval. Links go through the app. It is also capped at 10 per hour, and this is THREAT_MODEL A12.
+  - (L1) `evidence.source` is now wrapped as untrusted data.
+  - (L2) `/mcp/` refuses non-HTTP scopes.
+  - Open informational items: (I1) `--trusted-private-host` admits the whole tailnet name, so the brain could also reach `/api`, but that still needs the device token, which it doesn't have; scope it to `/mcp/` if NemoClaw allows. (I2) Check once that `nemoclaw mcp add` output never echoes the token.
+- **Acceptance still open:** "from chat, 'I'm worried X' → a Worry in `/api/worries`" needs that hookup. The MCP half is proven (`test_hand_over_puts_a_worry_in_the_api`).
+
 ## Decisions made
 - I did not read the brain's `openclaw.json` (it holds secrets; the read was refused by the permission guard). I changed only the one key via `openclaw config set`.
 - Fixed a flaky app test (`events.test.ts` used a fixed 5 ms sleep; now polls up to 1 s). Baseline after: 458 Python + 83 app tests pass.
@@ -125,3 +149,11 @@ Checks: `make lint` ✓ · `make typecheck` ✓ · `make test` 561 Python + 83 a
 - **Tailscale Serve is not enabled for the tailnet.** `tailscale serve` prints "Serve is not enabled on your tailnet. To enable, visit: https://login.tailscale.com/f/serve?node=nZtmGMpseH11CNTRL" and then waits. Only a tailnet admin can approve it. I did not add any HTTP or public fallback.
 
 ## Owner: do this next
+1. **Enable Tailscale Serve** for the tailnet (one click as admin): https://login.tailscale.com/f/serve?node=nZtmGMpseH11CNTRL (HTTPS certificates must be on).
+2. On the host: `cd ~/nvidia-claw && scripts/install-services.sh`. That sets up `tailscale serve` for `/` → app and `/api` → Warden. Then the app is at **https://ubuntu-s-4vcpu-8gb-fra1.tail081ca8.ts.net/** (tailnet only).
+3. Open that URL on your phone (in the tailnet), paste the device token from `grep WARDEN_DEVICE_TOKEN ~/.config/custody/warden.env`, then Add to Home Screen.
+4. `scripts/install-brain.sh`: registers the Warden's `/mcp/` with the brain. Then test T-11: chat "I'm worried my DHL parcel won't arrive by Friday" (`nemoclaw custody-brain agent …` or the gateway chat endpoint) and check that a worry appears in the app or `/api/worries`. Also check that `nemoclaw custody-brain mcp status custody --json` reports `trustedPrivateTarget.state = match`.
+5. Optional: a real `sudo reboot`, then `scripts/restart.sh`, to prove T-20 on a true reboot. A full stop/start was proven: HEALTHY in 95 s.
+6. A DHL key for `parcel_dhl` needs an OpenShell provider attached at sandbox create. That isn't wired yet (follow-up in ADR-0001).
+7. The school-calendar test worry is live (`cw-76epww8s`). Let it go in the app if you don't want it.
+8. Restore your `.claude/settings.json` deny rules when you're done on this host. I left the file uncommitted and unchanged, as you asked.
