@@ -17,6 +17,8 @@ behind its own bearer token `WARDEN_MCP_TOKEN` (never the device token; off with
 import os
 import re
 import secrets
+import time
+from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
@@ -33,6 +35,12 @@ from warden.models import WatchResult
 
 _WORRY_ID = re.compile(r"w_[0-9A-HJKMNP-TV-Z]{26}")
 _PEER_ID = re.compile(r"p_[0-9A-HJKMNP-TV-Z]{26}")
+# A worry from the brain may not name a host (T-11 review M1): the brain reads untrusted text, and
+# the dry run would GET a URL it chose before any human approval. The compiler parks a URL that
+# isn't in the worry text, so with none allowed here, only fixed-host adapters can run. Links go
+# through the app. Plus a cap on hand-overs.
+_URLISH = re.compile(r"https?:|www\.|\b[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}\b(/|$|\s)", re.I)
+HAND_OVER_PER_HOUR = 10
 _STATUSES = (
     "triaging", "compiling", "awaiting_approval", "watching",
     "needs_you", "resolved", "parked", "failed",
@@ -89,6 +97,7 @@ def _worry_id(value: str) -> str:
 
 def build_server(app: FastAPI) -> MCPServer:
     api = _Api(app)
+    recent: deque[float] = deque()  # hand_over times, for the hourly cap
     server = MCPServer(name="custody", instructions=INSTRUCTIONS)
 
     async def detail(worry_id: str) -> dict[str, Any]:
@@ -121,6 +130,17 @@ def build_server(app: FastAPI) -> MCPServer:
         text = text.strip()
         if not 1 <= len(text) <= 2000:
             raise ToolError("A worry needs 1 to 2000 characters.")
+        if _URLISH.search(text):
+            raise ToolError(
+                "Worries with a link or web address must be handed over in the Custody app, "
+                "so the person sees exactly what will be read. Ask them to paste it there."
+            )
+        now = time.monotonic()
+        while recent and now - recent[0] > 3600:
+            recent.popleft()
+        if len(recent) >= HAND_OVER_PER_HOUR:
+            raise ToolError("That's a lot of worries for one hour; let's pause and look at them.")
+        recent.append(now)
         response = await api.call("POST", "/api/worries", json={"text": text})
         response.raise_for_status()
         return {
@@ -209,6 +229,10 @@ class _RequireMcpToken:
         self._inner = inner
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":  # fail closed on websocket or anything the SDK adds
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})
+            return
         if scope["type"] == "http":
             expected = os.environ.get("WARDEN_MCP_TOKEN", "")
             device = os.environ.get("WARDEN_DEVICE_TOKEN", "")

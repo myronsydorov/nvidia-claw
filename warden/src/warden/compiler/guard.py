@@ -109,7 +109,7 @@ def guard_watch_result(result: WatchResult) -> dict[str, Any]:
         "status": result.status,
         "summary": untrusted(result.summary, "watcher_summary", max_chars=140),
         "evidence": {
-            "source": sanitize(result.evidence.source, max_chars=64),
+            "source": untrusted(result.evidence.source, "watcher_source", max_chars=64),
             "checked_at": result.evidence.checked_at.isoformat(),
         },
         "fear_came_true": result.fear_came_true,

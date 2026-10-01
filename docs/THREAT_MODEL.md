@@ -24,6 +24,7 @@ Custody holds the most private data a person has: their worries, their family's 
 | A8 | **Data over-sharing in answers** | Fixed vocabulary enforced before encryption; free text rejected; the privacy receipt shows exactly what left | AGENTS #5 |
 | A9 | **Stolen phone** | Device-token revocation from the host; passkey or device-bound token; no worry content cached offline beyond the current list | — |
 | A10 | **Hosted-inference privacy** (worry text sent to NVIDIA endpoints) | Stated honestly in the README and video; optional local Nemotron Nano routing is on the roadmap | ADR-0003 |
+| A12 | **The brain is steered by content it read** into handing over a worry that makes a sandbox GET an attacker's host before any approval (the dry run) | MCP `hand_over` refuses text containing a URL or domain (links go through the app); the compiler parks any URL not in the worry text, so only fixed-host adapters can run; at most 10 hand-overs per hour; worry hosts must resolve to public addresses; `evidence.source`, summaries, timeline and resolution reach the brain wrapped as `<untrusted_data>` (T-11 review) | AGENTS #6 |
 | A11 | **Harm to anxious users** (reassurance-seeking) | No on-demand "check again"; silence by default; closing a worry and recording the outcome build calibration; copy says "peace of mind, not therapy" | AGENTS #9 |
 
 ## Out of scope this week

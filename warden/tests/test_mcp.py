@@ -103,7 +103,7 @@ def _seed_watched(db_path: str) -> None:
             "sandbox_name": "cw-xa0001", "interval_s": 3600, "state": "active",
             "last_result": {
                 "status": "act_now", "summary": INJECTION,
-                "evidence": {"source": "DHL", "checked_at": "2026-09-29T09:00:00Z",
+                "evidence": {"source": INJECTION[:60], "checked_at": "2026-09-29T09:00:00Z",
                              "data": {"raw": "EVIDENCE_DATA_MARKER " + INJECTION}},
                 "fear_came_true": None, "next_check_s": 3600,
             },
@@ -149,3 +149,21 @@ def test_list_rejects_an_unknown_status_and_ledger_works(client: TestClient) -> 
     assert is_error
     is_error, ledger = call(client, "ledger")
     assert not is_error and ledger["locations_shared"] == 0
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["watch https://attacker.example/x", "check attacker.example/leak please",
+     "is www.example.org changed", "Calendar: calendar.google.com/x.ics"],
+)
+def test_hand_over_refuses_links(client: TestClient, text: str) -> None:
+    # T-11 review M1: no brain-chosen host gets a pre-approval dry-run GET.
+    is_error, message = call(client, "hand_over", text=text)
+    assert is_error and "Custody app" in message
+
+
+def test_hand_over_is_capped_per_hour(client: TestClient) -> None:
+    for i in range(10):
+        assert not call(client, "hand_over", text=f"worry number {i}")[0]
+    is_error, message = call(client, "hand_over", text="one more")
+    assert is_error and "pause" in message
