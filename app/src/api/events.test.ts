@@ -46,6 +46,11 @@ function sseResponse(chunks: string[]): Response {
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 5));
+// Polls instead of sleeping a fixed time, so a busy CI box can't starve the reconnect loop.
+const until = async (cond: () => boolean, timeoutMs = 1000) => {
+	const end = Date.now() + timeoutMs;
+	while (!cond() && Date.now() < end) await tick();
+};
 
 describe("createEventStream", () => {
 	it("sends the bearer token, emits events and reconnects after the stream ends", async () => {
@@ -63,7 +68,7 @@ describe("createEventStream", () => {
 		});
 		const seen: LiveEvent[] = [];
 		const off = stream.subscribe((e) => seen.push(e));
-		await tick();
+		await until(() => calls.length >= 2 && seen.length >= 3);
 		off();
 
 		expect(calls.length).toBeGreaterThanOrEqual(2); // it reconnected
@@ -112,7 +117,7 @@ describe("createEventStream", () => {
 			},
 		});
 		const off = stream.subscribe(() => {});
-		await tick();
+		await until(() => attempts.length >= 3);
 		off();
 		expect(attempts.slice(0, 3)).toEqual([0, 1, 2]);
 	});
@@ -134,7 +139,7 @@ describe("createEventStream", () => {
 			},
 		});
 		const off = stream.subscribe(() => {});
-		await tick();
+		await until(() => calls >= 3 && attempts.length >= 3);
 		off();
 		expect(calls).toBeGreaterThanOrEqual(3);
 		expect(attempts.slice(0, 3)).toEqual([0, 1, 2]);
