@@ -6,8 +6,8 @@ Status: `todo · doing · done · cut`. Every task has **acceptance criteria and
 ## Tue 29 Sep: foundation
 | ID | Owner | Task | Acceptance / verify | Status |
 |---|---|---|---|---|
-| T-01 | You | Launch NemoClaw on Brev; onboard the NVIDIA API key | `nemoclaw status` shows the sandbox `Ready` and a healthy inference probe | todo |
-| T-02 | You | Turn on OpenClaw's `/v1/chat/completions` endpoint, bound to loopback; create the token | `curl -s localhost:<port>/v1/chat/completions …` returns a completion; the port is not reachable from outside | todo |
+| T-01 | You | Launch NemoClaw on Brev; onboard the NVIDIA API key | `nemoclaw status` shows the sandbox `Ready` and a healthy inference probe | done (DO host, `custody-brain`; evidence in HANDOFF.md) |
+| T-02 | You | Turn on OpenClaw's `/v1/chat/completions` endpoint, bound to loopback; create the token | `curl -s localhost:<port>/v1/chat/completions …` returns a completion; the port is not reachable from outside | done (`scripts/check-gateway.sh`, `brain/gateway.md`) |
 | T-03 | Claude | Repo scaffold: structure from AGENTS.md, Makefile, uv, pnpm, ruff/mypy/biome, CI, `.gitignore`, `.env.example` | `make lint typecheck test` passes on the empty skeleton; CI passes | done* |
 | T-04 | Claude + You | **SPIKE:** sandbox per watcher. Create from the `watcher_runtime` image → apply the generated policy → exec `run.py` → parse the JSON → delete | Timings recorded in ADR-0001; a request to a host outside the policy is **denied and visible in the logs** | todo§§ |
 | T-05 | Claude | App shell on mock data: Home, Hand-over (animated steps + permission card), Worry detail; PWA manifest; design tokens | `pnpm -C app build` passes; a 390×844 screenshot matches the design notes | done† |
