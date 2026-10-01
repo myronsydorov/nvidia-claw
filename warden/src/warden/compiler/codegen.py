@@ -250,8 +250,14 @@ def _check_inputs_given(plan: Plan, worry_text: str) -> None:
             raise MissingInput(item.name)
 
 
-def stop_queries(content: str) -> list[tuple[str, str | None]]:
-    """The (stop name, line) pairs a plan asks the Warden to look up; [] if none or unparseable."""
+MAX_STOP_QUERY_CHARS = 80
+
+
+def stop_queries(content: str, worry_text: str) -> list[tuple[str, str | None]]:
+    """The (stop name, line) pairs a plan asks the Warden to look up; [] if none or unparseable.
+
+    Only names the person actually wrote (and short ones) leave the host: the model can't make
+    the Warden send arbitrary text to BVG (T-11/S7 security review)."""
     try:
         plan, _ = parse_answer(content)
     except (CodegenError, MissingInput):
@@ -259,7 +265,12 @@ def stop_queries(content: str) -> list[tuple[str, str | None]]:
     queries = []
     for item in plan.adapters:
         stop, line = item.params.get("stop"), item.params.get("line")
-        if item.name == "transit_bvg" and isinstance(stop, str) and stop.strip():
+        if (
+            item.name == "transit_bvg"
+            and isinstance(stop, str)
+            and 0 < len(stop.strip()) <= MAX_STOP_QUERY_CHARS
+            and stop.strip().lower() in worry_text.lower()
+        ):
             queries.append((stop.strip(), line.strip() if isinstance(line, str) else None))
     return queries
 

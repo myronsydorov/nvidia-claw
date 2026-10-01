@@ -1,0 +1,9 @@
+[Unit]
+Description=Re-pin the brain's ufw rule every 2 minutes (its container IP can change on restart)
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target

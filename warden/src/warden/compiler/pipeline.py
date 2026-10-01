@@ -185,7 +185,7 @@ class Compiler:
         """
         # Stop names → real BVG ids, looked up now; never ids from the model's memory.
         stop_ids: dict[tuple[str, str | None], str] = {}
-        for stop, line in codegen.stop_queries(answer):
+        for stop, line in codegen.stop_queries(answer, worry_text):
             found = await bvg_lookup.find_stop(stop, line)
             if found is not None:
                 stop_ids[(stop, line)] = found.id

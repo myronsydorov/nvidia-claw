@@ -49,6 +49,10 @@ Tailscale Serve is enabled (`/` app, `/api`, `/mcp`, tailnet only), and the brai
 - **After the fix:** the probe shows `credential resolution: verified (HTTP 200)`. A chat through the loopback gateway created worry `w_01M3WV2BR1ABGXMJ51ZGGMB5HG` in `/api/worries` (parked, as a social worry). **The T-11 acceptance is met.**
 - **Behaviour fix:** while blocked, the brain had *claimed* "I've taken your worry" without any tool call. A new standing order (#7) and the skill now say: only claim what `hand_over` confirmed, and say plainly when a tool fails. Both are reinstalled in the brain.
 - `restart.sh`: HEALTHY in 38 s, with the ufw step included.
+- **Security review of tonight's commits:** none of the 9 invariants is violated. Fixed:
+  - (Medium) `ufw-brain-mcp.sh` aborted after the first delete (`yes | ufw delete` under `pipefail`), and its partial-match IP comparison could keep an old allow for a lookalike IP. It now compares fields exactly, uses `ufw --force delete`, and removes old rules even when the brain is down. Verified: a planted `172.18.0.23` rule was removed, leaving exactly one rule.
+  - (Low) A 2-minute `custody-ufw-brain.timer` re-pins the rule if the brain restarts on its own.
+  - (Low) Only stop names that appear in the worry (≤ 80 chars) are sent to the BVG lookup.
 
 ---
 

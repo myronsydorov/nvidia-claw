@@ -1,0 +1,8 @@
+[Unit]
+Description=Custody: keep the one ufw rule letting only the brain container reach /mcp/
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/nvidia-claw/scripts/ufw-brain-mcp.sh

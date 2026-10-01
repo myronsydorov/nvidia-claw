@@ -72,7 +72,7 @@ def test_a_stop_id_the_person_wrote_is_still_accepted() -> None:
 
 def test_a_named_stop_is_pinned_from_the_lookup(bvg: list[dict[str, str]]) -> None:
     content = answer({"stop": "Lichtenberg", "line": "S7"}, codegen.STOP_PLACEHOLDER)
-    queries = codegen.stop_queries(content)
+    queries = codegen.stop_queries(content, S7_WORRY)
     assert queries == [("Lichtenberg", "S7")]
     found = asyncio.run(bvg_lookup.find_stop(*queries[0]))
     assert found is not None
@@ -102,3 +102,11 @@ def test_the_placeholder_is_required() -> None:
     content = answer({"stop": "Lichtenberg", "line": "S7"}, "900160004")
     with pytest.raises(codegen.CodegenError, match="BVG_STOP_ID"):
         codegen.build(content, S7_WORRY, {("Lichtenberg", "S7"): "900160004"})
+
+
+def test_only_stop_names_from_the_worry_are_looked_up() -> None:
+    # Security review: the model can't make the Warden send arbitrary text to BVG.
+    invented = answer({"stop": "Ostkreuz", "line": "S7"}, codegen.STOP_PLACEHOLDER)
+    assert codegen.stop_queries(invented, S7_WORRY) == []
+    long = answer({"stop": S7_WORRY, "line": "S7"}, codegen.STOP_PLACEHOLDER)
+    assert codegen.stop_queries(long, S7_WORRY) == []  # the whole worry: over the length cap
