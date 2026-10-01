@@ -21,10 +21,15 @@ export function every(intervalS: number): string {
 	return `every ${Math.round(intervalS / 60)} minutes`;
 }
 
+// Custody's people are in Berlin: times show as Europe/Berlin wall-clock time whatever zone
+// the device is in (the Warden stores UTC).
+export const LOCAL_TIME_ZONE = "Europe/Berlin";
+
 export function day(isoTime: string): string {
 	return new Date(isoTime).toLocaleString("en-GB", {
 		weekday: "short",
 		hour: "2-digit",
 		minute: "2-digit",
+		timeZone: LOCAL_TIME_ZONE,
 	});
 }

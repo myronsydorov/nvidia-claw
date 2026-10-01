@@ -239,3 +239,32 @@ def test_an_unknown_missing_adapter_gets_a_generic_ask() -> None:
 def test_an_empty_plan_without_missing_is_an_error() -> None:
     with pytest.raises(CodegenError, match="no adapters"):
         build('```json\n{"adapters": []}\n```', "x")
+
+
+# --- S7 incident: the person's times are Europe/Berlin, stored as UTC ----------------------
+
+
+def test_a_local_deadline_is_berlin_time_stored_as_utc() -> None:
+    t = parse_triage(
+        '{"type": "deadline", "fear": "S7 disrupted around 09:00 on Fri 2 Oct",'
+        ' "deadline": "2026-10-02T09:00", "route": "watch"}'
+    )
+    assert t.deadline == datetime(2026, 10, 2, 7, 0, tzinfo=UTC)  # CEST is UTC+2
+    winter = parse_triage(
+        '{"type": "deadline", "fear": "x", "deadline": "2026-12-02T09:00", "route": "watch"}'
+    )
+    assert winter.deadline == datetime(2026, 12, 2, 8, 0, tzinfo=UTC)  # CET is UTC+1
+
+
+def test_a_deadline_with_an_explicit_offset_is_kept() -> None:
+    t = parse_triage('{"type": "deadline", "fear": "x", "deadline": "2026-10-02T09:00Z",'
+                     ' "route": "watch"}')  # fmt: skip
+    assert t.deadline == datetime(2026, 10, 2, 9, 0, tzinfo=UTC)
+
+
+async def test_triage_is_told_the_berlin_local_time_and_to_answer_in_it() -> None:
+    llm = Scripted(REPLAY[0]["triage"])
+    await triage(llm, "S7 at 9:00?", datetime(2026, 10, 1, 22, 27, tzinfo=UTC))
+    system, user = llm.calls[0][1]
+    assert "Friday 2026-10-02T00:27 Europe/Berlin" in user.content  # already Friday locally
+    assert "never UTC" in system.content and "NO offset" in system.content

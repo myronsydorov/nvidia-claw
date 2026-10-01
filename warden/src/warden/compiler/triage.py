@@ -3,10 +3,11 @@
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
-from pydantic import AwareDatetime, BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from warden.compiler.guard import GUARD_RULE, untrusted
 from warden.compiler.llm import CallDiag, LLMClient, LLMError, Message, Stage
@@ -17,12 +18,28 @@ Route = Literal["watch", "person", "park"]
 TriageType = Literal["checkable", "deadline", "person", "social", "uncontrollable"]
 
 
+# The people Custody serves are in Berlin: every time they give is Europe/Berlin local time
+# (S7 incident: "around 9:00" was stored as 09:00 UTC, two hours late). Times are stored UTC.
+LOCAL_TZ = ZoneInfo("Europe/Berlin")
+
+
 class Triage(BaseModel):
     type: TriageType
     fear: str = Field(min_length=1, max_length=200)
-    deadline: AwareDatetime | None
+    deadline: datetime | None
     route: Route
     signal: str = Field(default="", max_length=300)
+
+    @field_validator("deadline")
+    @classmethod
+    def _local_to_utc(cls, value: datetime | None) -> datetime | None:
+        """The model gives the person's local wall-clock time without an offset; the zone math
+        is ours. A value that does carry an offset is trusted as such."""
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=LOCAL_TZ)
+        return value.astimezone(UTC)
 
 
 SYSTEM = f"""You triage worries for Custody, a calm assistant that holds on to worries for people.
@@ -40,10 +57,12 @@ type:
 route: "watch" for checkable/deadline, "person" for person, "park" for social/uncontrollable.
 If a checkable worry lacks what a watcher would need, still route "watch": a builder decides.
 
-fear: the precise bad outcome in one short line, with the concrete thing and time,
-e.g. "parcel 00340434161094042557 not delivered by 2026-10-02T16:00Z".
-deadline: ISO 8601 UTC when the worry stops mattering, or null if none is stated or implied.
-Resolve relative dates ("Friday", "tomorrow") from the current time you are given.
+Times: the person lives in Berlin. Every time they mention is Europe/Berlin local time.
+fear: the precise bad outcome in one short line, with the concrete thing and the person's own
+local time, never UTC, e.g. "parcel 00340434161094042557 not delivered by Fri 2 Oct, 16:00".
+deadline: when the worry stops mattering, as the person's LOCAL date and time with NO offset
+and no "Z", e.g. "2026-10-02T16:00", or null if none is stated or implied.
+Resolve relative dates ("Friday", "today", "this evening") from the local time you are given.
 signal: which observable signal would settle it (e.g. "DHL tracking status"), or "".
 
 {GUARD_RULE}"""
@@ -95,7 +114,8 @@ def _messages(text: str, now: datetime) -> list[Message]:
         Message("system", SYSTEM),
         Message(
             "user",
-            f"Current time: {now.isoformat()}\nThe worry, as the user wrote it:\n"
+            f"Current time: {now.astimezone(LOCAL_TZ):%A %Y-%m-%dT%H:%M} Europe/Berlin "
+            f"(UTC: {now.astimezone(UTC).isoformat()})\nThe worry, as the user wrote it:\n"
             + untrusted(text, "worry_text"),
         ),
     ]

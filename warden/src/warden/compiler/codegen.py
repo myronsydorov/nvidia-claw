@@ -10,7 +10,7 @@ never the model's, and adapters may not name secrets beyond their fixed ones.
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -20,7 +20,7 @@ from warden.adapters.base import Adapter
 from warden.adapters.registry import ADAPTER_CATALOGUE, ADAPTER_FACTORIES, FIXED_ADAPTERS
 from warden.compiler.guard import GUARD_RULE, untrusted
 from warden.compiler.llm import Message
-from warden.compiler.triage import Triage
+from warden.compiler.triage import LOCAL_TZ, Triage
 
 MAX_ADAPTERS = 3
 MIN_INTERVAL_S = 300
@@ -340,7 +340,9 @@ def first_messages(text: str, t: Triage, now: datetime) -> list[Message]:
         Message("system", SYSTEM),
         Message(
             "user",
-            f"Current time: {now.isoformat()}\n"
+            f"Current time: {now.astimezone(UTC).isoformat()} "
+            f"(Europe/Berlin: {now.astimezone(LOCAL_TZ).isoformat()})\n"
+            "The deadline below is UTC; the person's times are Europe/Berlin local.\n"
             f"Worry type: {t.type}. Deadline: {deadline}.\n"
             "The precise fear and the settling signal (from triage):\n"
             + untrusted(f"fear: {t.fear}\nsignal: {t.signal}", "triage_summary", max_chars=600)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { href, parseHash } from "./router";
-import { ago, every } from "./time";
+import { ago, day, every } from "./time";
 
 describe("router", () => {
 	it("round-trips every route", () => {
@@ -34,5 +34,12 @@ describe("time", () => {
 		expect(every(10800)).toBe("every 3 hours");
 		expect(every(1800)).toBe("every 30 minutes");
 		expect(every(86400)).toBe("once a day");
+	});
+});
+
+describe("day", () => {
+	it("shows Berlin wall-clock time for a UTC instant (S7 incident)", () => {
+		// 07:00 UTC on Fri 2 Oct 2026 is 09:00 in Berlin (CEST), whatever the device zone.
+		expect(day("2026-10-02T07:00:00Z")).toBe("Fri 09:00");
 	});
 });
