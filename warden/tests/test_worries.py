@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from seed import seed_watcher, seed_worry
 from warden.app import app
@@ -177,3 +178,30 @@ def test_outcome_records_fear_came_true(auth_headers: dict[str, str]) -> None:
         )
     assert response.status_code == 200
     assert response.json()["worry"]["fear_came_true"] is True
+
+
+def test_approve_refuses_a_host_that_now_resolves_privately(
+    auth_headers: dict[str, str], warden_test_environment: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # T-04 security review: DNS is checked again at approve, before any sandbox exists.
+    from warden.adapters.parcel_dhl import ADAPTER
+    from warden.compiler.policy import generate_policy
+
+    async def private(host: str, port: int) -> list[str]:
+        return ["10.0.0.7"]
+
+    monkeypatch.setattr("warden.compiler.hosts.resolve", private)
+    db_path = warden_test_environment
+    watcher_id = f"wt_{WATCHER_ULID}"
+    worry_id = f"w_{WORRY_ULID}"
+    seed_worry(db_path, _worry("awaiting_approval", watcher_id), timeline=[])
+    watcher = _watcher(worry_id, "awaiting_approval")
+    watcher["policy_yaml"] = generate_policy([ADAPTER], str(watcher["sandbox_name"]))[0]
+    seed_watcher(db_path, watcher)
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/worries/{worry_id}/approve", headers=auth_headers)
+        assert response.status_code == 409
+        assert "private or local" in response.json()["detail"]
+        health = client.get("/api/health", headers=auth_headers).json()
+        assert health["sandboxes_live"] == 0

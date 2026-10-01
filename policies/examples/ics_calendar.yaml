@@ -19,8 +19,8 @@ process:
   run_as_user: sandbox
   run_as_group: sandbox
 network_policies:
-  custody_cal_example_com_443:
-    name: custody_cal_example_com_443
+  custody_cal_example_com_443_16384911:
+    name: custody_cal_example_com_443_16384911
     endpoints:
     - host: cal.example.com
       port: 443

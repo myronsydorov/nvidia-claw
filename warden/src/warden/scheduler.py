@@ -15,7 +15,7 @@ from warden.db import Store
 from warden.events import EventBus
 from warden.models import Evidence, TimelineEvent, Watcher, WatchResult, Worry
 from warden.sandbox.driver import SandboxDriver
-from warden.watch_output import RUN_COMMAND, OutputProblem, parse_output
+from warden.watch_output import RUN_COMMAND, RUN_PATH, OutputProblem, parse_output
 from warden.worry_rows import parse_row, save_watcher, save_worry
 
 log = logging.getLogger(__name__)
@@ -177,6 +177,8 @@ class Scheduler:
 
     async def _exec(self, watcher: Watcher) -> WatchResult:
         try:
+            # /w stays writable (ADR-0001), so restore the approved code before every run.
+            await self._driver.write_file(watcher.sandbox_name, RUN_PATH, watcher.code)
             out = await asyncio.wait_for(
                 self._driver.exec(watcher.sandbox_name, RUN_COMMAND),
                 timeout=self._exec_timeout_s,

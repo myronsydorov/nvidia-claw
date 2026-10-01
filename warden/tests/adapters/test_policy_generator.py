@@ -132,3 +132,21 @@ def test_baseline_policy_allows_no_network() -> None:
     doc = yaml.safe_load(baseline_policy_yaml())
     assert doc["network_policies"] == {}
     assert egress_rules(baseline_policy_yaml()) == set()
+
+
+def test_hosts_that_sanitize_alike_never_share_a_policy_entry() -> None:
+    # T-04 security review: `a-b.example.com` and `a.b.example.com` once mapped to one key.
+    both = Adapter(
+        name="lookalikes",
+        endpoints=[
+            Endpoint(host="a-b.example.com", path="/one", why="one"),
+            Endpoint(host="a.b.example.com", path="/two", why="two"),
+        ],
+        description="two hosts that sanitize to the same identifier",
+    )
+    policy_yaml, summary = generate_policy([both], sandbox_name="cw-test11")
+    assert egress_rules(policy_yaml) == {
+        ("a-b.example.com", 443, "GET", "/one"),
+        ("a.b.example.com", 443, "GET", "/two"),
+    }
+    assert len(yaml.safe_load(policy_yaml)["network_policies"]) == 2

@@ -19,8 +19,8 @@ process:
   run_as_user: sandbox
   run_as_group: sandbox
 network_policies:
-  custody_visa_example_com_443:
-    name: custody_visa_example_com_443
+  custody_visa_example_com_443_bafab478:
+    name: custody_visa_example_com_443_bafab478
     endpoints:
     - host: visa.example.com
       port: 443

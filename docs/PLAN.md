@@ -9,13 +9,21 @@ Status: `todo · doing · done · cut`. Every task has **acceptance criteria and
 | T-01 | You | Launch NemoClaw on Brev; onboard the NVIDIA API key | `nemoclaw status` shows the sandbox `Ready` and a healthy inference probe | done (DO host, `custody-brain`; evidence in HANDOFF.md) |
 | T-02 | You | Turn on OpenClaw's `/v1/chat/completions` endpoint, bound to loopback; create the token | `curl -s localhost:<port>/v1/chat/completions …` returns a completion; the port is not reachable from outside | done (`scripts/check-gateway.sh`, `brain/gateway.md`) |
 | T-03 | Claude | Repo scaffold: structure from AGENTS.md, Makefile, uv, pnpm, ruff/mypy/biome, CI, `.gitignore`, `.env.example` | `make lint typecheck test` passes on the empty skeleton; CI passes | done* |
-| T-04 | Claude + You | **SPIKE:** sandbox per watcher. Create from the `watcher_runtime` image → apply the generated policy → exec `run.py` → parse the JSON → delete | Timings recorded in ADR-0001; a request to a host outside the policy is **denied and visible in the logs** | todo§§ |
+| T-04 | Claude + You | **SPIKE:** sandbox per watcher. Create from the `watcher_runtime` image → apply the generated policy → exec `run.py` → parse the JSON → delete | Timings recorded in ADR-0001; a request to a host outside the policy is **denied and visible in the logs** | done§§ |
 | T-05 | Claude | App shell on mock data: Home, Hand-over (animated steps + permission card), Worry detail; PWA manifest; design tokens | `pnpm -C app build` passes; a 390×844 screenshot matches the design notes | done† |
 | T-06 | You | Start a real worry log (plain notes) to feed in once L1 works | ≥ 5 real worries written down | todo |
 
 † T-05: app shell runs on an in-memory mock API (`app/src/api/client.ts`); fixtures parse through the zod contract schemas. CONTRACTS.md gained `TimelineEvent`, `WorrySummary` and `WorryDetail` to pin down the `/api/worries` response shapes.
 
 §§ T-04 sub-item: decide whether `Endpoint.path` accepts percent-encoding once we know whether OpenShell matches raw or decoded paths; **security-reviewer required.** (From T-09: Google Calendar ICS links contain `%23`/`%40`, and `^/[A-Za-z0-9_./-]*$` rejects them.)
+**Done (2026-10-01), on the DigitalOcean host:**
+- **Driver:** `warden/src/warden/sandbox/openshell.py` (`CUSTODY_SANDBOX=openshell`) creates the sandbox network-less, then `policy set --wait`, uploads `/w/run.py`, execs, and deletes. `denials()` reads OpenShell's OCSF log.
+- **Policy:** `compiler/policy.py` now emits OpenShell's real schema.
+- **Image:** `watcher_runtime/image/Dockerfile`, built with `make watcher-image`.
+- **Live check:** `make spike` shows declared endpoints allowed, a percent-encoded Google ICS link allowed, and `example.com`, an undeclared path and `%2F` denied, with OCSF `DENIED` lines in `openshell logs`. Timings are in ADR-0001: create 1.1 s, policy 8–9 s, exec 0.1 s, 12 MiB idle.
+- **Percent-encoding:** OpenShell matches a *canonicalized* path, so `Endpoint.path` must be in that canonical form (`adapters.base.canonical_path`; ADR-0001, CONTRACTS §1). T-09's `school_calendar` case now builds.
+- **Security-reviewer pass:** no invariant violations. Every finding is fixed and tested; the list is in ADR-0001.
+- **Tests:** 556 Python + 83 app.
 
 \* T-03: `make lint typecheck test` verified locally (evidence in the PR). CI itself is unverified until the first push to GitHub triggers `.github/workflows/ci.yml`.
 

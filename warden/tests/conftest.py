@@ -22,6 +22,11 @@ def warden_test_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     monkeypatch.delenv("RELAY_URL", raising=False)  # no relay unless a test brings its own
     monkeypatch.delenv("CUSTODY_CALENDAR_ICS", raising=False)
     monkeypatch.setenv("CUSTODY_ACTIVITY", "off")  # never read this machine's idle time
+
+    async def public_only(host: str, port: int) -> list[str]:
+        return ["93.184.215.14"]  # no live DNS in unit tests; every host looks public
+
+    monkeypatch.setattr("warden.compiler.hosts.resolve", public_only)
     with tempfile.TemporaryDirectory() as tmp:
         db_path = f"{tmp}/warden-test.db"
         monkeypatch.setenv("WARDEN_DB_PATH", db_path)

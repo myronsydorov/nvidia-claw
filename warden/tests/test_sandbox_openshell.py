@@ -17,15 +17,17 @@ from warden.sandbox.openshell import OpenShellDriver, OpenShellError
 
 FAKE = """#!{python}
 import json, os, sys
-log = os.environ["FAKE_LOG"]
+here = os.path.dirname(os.path.abspath(sys.argv[0]))
+log = os.path.join(here, "calls.jsonl")  # config lives next to the binary: the driver
+mode_file = os.path.join(here, "mode")    # passes the CLI an env allowlist only
 args = sys.argv[1:]
-record = {{"args": args, "stdin_tty": os.isatty(0)}}
+record = {{"args": args, "stdin_tty": os.isatty(0), "env_keys": sorted(os.environ)}}
 for a in args:
     if a.endswith((".yaml", ".py")) and os.path.exists(a):
         record.setdefault("files", {{}})[os.path.basename(a)] = open(a).read()
 with open(log, "a") as fh:
     fh.write(json.dumps(record) + "\\n")
-mode = os.environ.get("FAKE_MODE", "")
+mode = open(mode_file).read() if os.path.exists(mode_file) else ""
 if args[:2] == ["sandbox", "get"]:
     print(json.dumps({{"name": args[2], "phase": "Ready"}}))
 elif args[:2] == ["sandbox", "exec"]:
@@ -54,7 +56,6 @@ def fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[OpenShellDriv
     binary.write_text(FAKE.format(python=sys.executable))
     binary.chmod(binary.stat().st_mode | stat.S_IEXEC)
     log = tmp_path / "calls.jsonl"
-    monkeypatch.setenv("FAKE_LOG", str(log))
     return OpenShellDriver(image="custody-watcher:test", binary=str(binary)), log
 
 
@@ -100,7 +101,8 @@ def test_full_lifecycle_sends_the_expected_commands(fake: tuple[OpenShellDriver,
 
 
 @pytest.mark.parametrize(
-    "name", ["custody-brain", "cw-", "cw-UPPER", "cw-a;rm", "x-abc", "cw-" + "a" * 17]
+    "name",
+    ["custody-brain", "cw-", "cw-UPPER", "cw-a;rm", "x-abc", "cw-" + "a" * 17, "cw-abc\n"],
 )
 def test_refuses_names_that_are_not_ours(fake: tuple[OpenShellDriver, Path], name: str) -> None:
     driver, log = fake
@@ -111,31 +113,75 @@ def test_refuses_names_that_are_not_ours(fake: tuple[OpenShellDriver, Path], nam
     assert not log.exists()
 
 
-@pytest.mark.parametrize("path", ["/etc/passwd", "/w/../etc/x.py", "/w/run.sh", "/sandbox/run.py"])
+@pytest.mark.parametrize(
+    "path", ["/etc/passwd", "/w/../etc/x.py", "/w/run.sh", "/sandbox/run.py", "/w/run.py\n"]
+)
 def test_refuses_uploads_outside_w(fake: tuple[OpenShellDriver, Path], path: str) -> None:
     driver, _ = fake
     with pytest.raises(ValueError):
         asyncio.run(driver.write_file("cw-abc123", path, "x"))
 
 
-def test_refuses_a_hand_widened_policy(fake: tuple[OpenShellDriver, Path]) -> None:
+POLICY, _ = generate_policy([DHL], "cw-abc123")
+
+
+@pytest.mark.parametrize(
+    "widened",
+    [
+        POLICY.replace("path: /track/shipments", "path: /**"),
+        POLICY.replace("path: /track/shipments", "path: /track/a%40b"),  # not canonical
+        POLICY.replace("method: GET", "method: POST"),
+        POLICY.replace("host: api-eu.dhl.com", "host: '*.dhl.com'"),
+        POLICY.replace("host: api-eu.dhl.com", "host: 169.254.169.254"),
+        POLICY.replace("enforcement: enforce", "enforcement: audit"),
+        POLICY.replace("protocol: rest", "protocol: tcp"),
+        POLICY.replace("protocol: rest", "protocol: rest\n      allow_encoded_slash: true"),
+        POLICY.replace("/usr/local/bin/python3.12", "/bin/bash"),
+        POLICY.replace("compatibility: strict", "compatibility: best_effort"),
+        POLICY.replace("  - /etc\n", "  - /etc\n  - /home\n"),
+        POLICY.replace("run_as_user: sandbox", "run_as_user: root"),
+        "network_policies: {}\n",
+        "[]",
+        "{{{",
+    ],
+)
+def test_refuses_a_policy_generate_policy_would_not_make(
+    fake: tuple[OpenShellDriver, Path], widened: str
+) -> None:
     driver, log = fake
-    policy_yaml, _ = generate_policy([DHL], "cw-abc123")
-    for widened in (
-        policy_yaml.replace("path: /track/shipments", "path: /**"),
-        policy_yaml.replace("method: GET", "method: POST"),
-        policy_yaml.replace("host: api-eu.dhl.com", "host: '*.dhl.com'"),
-    ):
-        with pytest.raises(ValueError):
-            asyncio.run(driver.apply_policy("cw-abc123", widened))
+    assert widened != POLICY
+    with pytest.raises(ValueError):
+        asyncio.run(driver.apply_policy("cw-abc123", widened))
     assert not log.exists()
+
+
+def test_the_cli_never_sees_the_wardens_secrets(
+    fake: tuple[OpenShellDriver, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    driver, log = fake
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
+    monkeypatch.setenv("WARDEN_DEVICE_TOKEN", "tok")
+    monkeypatch.setenv("OPENCLAW_GATEWAY_TOKEN", "gw")
+    asyncio.run(driver.exec("cw-abc123", ["true"]))
+    env_keys = set(_calls(log)[0]["env_keys"])
+    assert not env_keys & {"NVIDIA_API_KEY", "WARDEN_DEVICE_TOKEN", "OPENCLAW_GATEWAY_TOKEN"}
+
+
+def test_a_failed_create_cleans_up(
+    fake: tuple[OpenShellDriver, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    driver, log = fake
+    (log.parent / "mode").write_text("create_fails")
+    with pytest.raises(OpenShellError):
+        asyncio.run(driver.create("cw-abc123", "watcher-base"))
+    assert _calls(log)[-1]["args"] == ["sandbox", "delete", "cw-abc123"]
 
 
 def test_exec_passes_exit_code_and_streams_through(
     fake: tuple[OpenShellDriver, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    driver, _ = fake
-    monkeypatch.setenv("FAKE_MODE", "exit3")
+    driver, log = fake
+    (log.parent / "mode").write_text("exit3")
     out = asyncio.run(driver.exec("cw-abc123", ["python3", "/w/run.py"]))
     assert (out.exit_code, out.stdout, out.stderr) == (3, "partial", "boom")
 
@@ -143,8 +189,8 @@ def test_exec_passes_exit_code_and_streams_through(
 def test_cli_failure_raises_without_echoing_its_output(
     fake: tuple[OpenShellDriver, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    driver, _ = fake
-    monkeypatch.setenv("FAKE_MODE", "create_fails")
+    driver, log = fake
+    (log.parent / "mode").write_text("create_fails")
     with pytest.raises(OpenShellError) as info:
         asyncio.run(driver.create("cw-abc123", "watcher-base"))
     assert "secret-looking" not in str(info.value)
@@ -153,8 +199,8 @@ def test_cli_failure_raises_without_echoing_its_output(
 def test_delete_of_a_missing_sandbox_is_not_an_error(
     fake: tuple[OpenShellDriver, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    driver, _ = fake
-    monkeypatch.setenv("FAKE_MODE", "gone")
+    driver, log = fake
+    (log.parent / "mode").write_text("gone")
     asyncio.run(driver.delete("cw-abc123"))
 
 

@@ -19,8 +19,8 @@ process:
   run_as_user: sandbox
   run_as_group: sandbox
 network_policies:
-  custody_api_eu_dhl_com_443:
-    name: custody_api_eu_dhl_com_443
+  custody_api_eu_dhl_com_443_c70dc400:
+    name: custody_api_eu_dhl_com_443_c70dc400
     endpoints:
     - host: api-eu.dhl.com
       port: 443
@@ -32,8 +32,8 @@ network_policies:
           path: /track/shipments
     binaries:
     - path: /usr/local/bin/python3.12
-  custody_api_open_meteo_com_443:
-    name: custody_api_open_meteo_com_443
+  custody_api_open_meteo_com_443_ba8e8afe:
+    name: custody_api_open_meteo_com_443_ba8e8afe
     endpoints:
     - host: api.open-meteo.com
       port: 443
@@ -45,8 +45,8 @@ network_policies:
           path: /v1/forecast
     binaries:
     - path: /usr/local/bin/python3.12
-  custody_v6_bvg_transport_rest_443:
-    name: custody_v6_bvg_transport_rest_443
+  custody_v6_bvg_transport_rest_443_4abfa1ea:
+    name: custody_v6_bvg_transport_rest_443_4abfa1ea
     endpoints:
     - host: v6.bvg.transport.rest
       port: 443

@@ -60,3 +60,25 @@ So a rule written as `/a%40b` never matches anything, and a declared `*` would b
   - dot segments (`%2E%2E` included) and empty segments.
 - The Google Calendar ICS link from T-09's `school_calendar` case now declares as `/calendar/ical/de.german%23holiday@group.v.calendar.google.com/public/basic.ics` and works live.
 - **OpenShell limit, recorded:** because it strips `;params` and resolves dot segments before matching, the upstream server sees the raw path. A server that treats `;` or `..` differently from OpenShell could serve a sibling resource under an allowed rule. Every host is still only one the person approved, and GET-only.
+
+## Private addresses (measured, T-04 security review)
+OpenShell's SSRF engine always refuses a name that resolves to loopback or link-local, and logs it: `DENIED … -> 127.0.0.1.nip.io:443 [policy:- engine:ssrf] [reason:… resolves to always-blocked address 127.0.0.1]`, and the same for `169.254.169.254.nip.io`. Names resolving to RFC 1918 or Docker-bridge addresses (`10.19.0.5.nip.io`, `172.17.0.1.nip.io`) were **not** clearly refused: the requests timed out, and nothing was logged.
+- **Decision:** the Warden resolves every endpoint host and refuses any non-global address (`compiler/hosts.py`). It checks before the dry run and again at approve, before a sandbox exists (`409`).
+- **Port:** worry-supplied URLs must use port 443.
+- **Still out of scope:** a name that changes its DNS answer after approve (rebinding), see THREAT_MODEL.
+
+## Security review (T-04)
+No invariant violations. Fixes applied, each with tests:
+- The private-address check and the port-443 rule above.
+- The `openshell` CLI gets an env allowlist, never the Warden's secrets.
+- A policy read back from the database must be exactly what `generate_policy` makes: the baseline, `rest`/`enforce`, the one binary, and endpoints re-validated through `Endpoint`.
+- Policy keys carry a host hash, so `a-b.x` and `a.b.x` can't merge.
+- The scheduler re-uploads the approved `run.py` before every run, so a rewrite can't persist.
+- `%5C` is refused in paths.
+- The base image is pinned by digest, and the runtime is installed as a host-built wheel.
+- Name and path checks use `fullmatch`.
+- A failed `create` deletes whatever the CLI may have created.
+
+**Follow-ups:**
+- The watcher_runtime adapters' `fetch()` could also refuse `;`, dot segments and `%5C` in outgoing paths. A split-string URL can get past the gate's literal check, and OpenShell strips `;params`.
+- Adapter secrets (`DHL_API_KEY`) still need an OpenShell provider attached at create (`--provider`); until then `parcel_dhl` watchers run without a key.

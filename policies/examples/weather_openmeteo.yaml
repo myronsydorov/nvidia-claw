@@ -19,8 +19,8 @@ process:
   run_as_user: sandbox
   run_as_group: sandbox
 network_policies:
-  custody_api_open_meteo_com_443:
-    name: custody_api_open_meteo_com_443
+  custody_api_open_meteo_com_443_ba8e8afe:
+    name: custody_api_open_meteo_com_443_ba8e8afe
     endpoints:
     - host: api.open-meteo.com
       port: 443

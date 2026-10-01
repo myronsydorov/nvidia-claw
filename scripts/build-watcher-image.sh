@@ -7,6 +7,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 uv export --package watcher_runtime --no-dev --no-emit-project --no-emit-workspace \
   --format requirements-txt --quiet > watcher_runtime/image/requirements.txt
+rm -rf watcher_runtime/image/dist
+uv build --package watcher_runtime --wheel --quiet -o watcher_runtime/image/dist
 hash=$(cd watcher_runtime && find image/Dockerfile image/requirements.txt pyproject.toml src -type f \
   ! -path '*__pycache__*' -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)
 ref="custody-watcher:$hash"

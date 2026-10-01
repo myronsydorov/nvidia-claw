@@ -18,7 +18,7 @@ are resolved and `//` merged; `%2F`, `%00` and malformed escapes are refused out
 written as `/a%40b` therefore never matches anything, and one written with a `*` would be a
 glob. `canonical_path` produces exactly that form and refuses anything that would be a glob
 character, a path parameter (`;`, which OpenShell strips before matching), an encoded slash, a
-control byte, or a dot or empty segment.
+control byte, an encoded backslash, or a dot or empty segment.
 """
 
 import ipaddress
@@ -87,8 +87,10 @@ def canonical_path(raw: str) -> str:
             if len(hex_digits) != 2 or not set(hex_digits) <= _HEX:
                 raise ValueError(f"malformed percent-escape in path: {raw!r}")
             byte = int(hex_digits, 16)
-            if byte == 0x2F or byte < 0x20 or byte == 0x7F:
-                raise ValueError(f"encoded slash or control byte in path: {raw!r}")
+            # %2F and %5C: some servers decode either into a path separator after OpenShell
+            # has matched the still-encoded form.
+            if byte in (0x2F, 0x5C) or byte < 0x20 or byte == 0x7F:
+                raise ValueError(f"encoded slash, backslash or control byte in path: {raw!r}")
             decoded = chr(byte)
             if byte < 0x80 and decoded in _DECODED_BY_OPENSHELL:
                 if decoded not in _LITERAL:
@@ -136,5 +138,7 @@ def parse_https_url(url: str) -> tuple[str, int, str]:
     else:
         raise ValueError(f"bare IP literals are not allowed as hosts: {host!r}")
     port = parsed.port or 443
+    if port != 443:
+        raise ValueError(f"only the standard HTTPS port is allowed, got {port}")
     path = canonical_path(parsed.path or "/")
     return host, port, path

@@ -1,6 +1,7 @@
 # Custody watcher base image (ADR-0001): one OpenShell sandbox per watcher is created from this.
 # Built by scripts/build-watcher-image.sh; the build context is the repo's watcher_runtime/.
-FROM python:3.12-slim-bookworm
+# python:3.12-slim-bookworm, pinned by digest.
+FROM python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e
 
 # iproute2: OpenShell's supervisor sets up the sandbox network namespace with it.
 RUN apt-get update \
@@ -13,12 +14,12 @@ RUN groupadd -r -g 998 sandbox \
     && mkdir -p /sandbox /w \
     && chown sandbox:sandbox /sandbox /w
 
-# Pinned, hash-checked dependencies exported from uv.lock, then the runtime itself (no deps).
+# Pinned, hash-checked dependencies exported from uv.lock, then the runtime itself as a wheel
+# built on the host (no build backend is fetched or run inside the image build).
 COPY image/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt && rm /tmp/requirements.txt
-COPY pyproject.toml /opt/watcher_runtime/pyproject.toml
-COPY src /opt/watcher_runtime/src
-RUN pip install --no-cache-dir --no-deps /opt/watcher_runtime && rm -rf /opt/watcher_runtime
+COPY image/dist/*.whl /tmp/
+RUN pip install --no-cache-dir --no-deps --no-index /tmp/*.whl && rm /tmp/*.whl
 
 WORKDIR /sandbox
 USER sandbox

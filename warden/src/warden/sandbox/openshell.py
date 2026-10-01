@@ -28,13 +28,28 @@ import tempfile
 import time
 from pathlib import Path
 
-from warden.compiler.policy import baseline_policy_yaml, egress_rules
+import yaml
+
+from warden.adapters.base import Endpoint
+from warden.compiler.policy import BASELINE, WATCHER_BINARY, baseline_policy_yaml
 from warden.sandbox.driver import ExecResult, SandboxHandle
 
 log = logging.getLogger(__name__)
 
-_NAME = re.compile(r"^cwd?-[a-z0-9][a-z0-9-]{0,15}$")  # CONTRACTS: cw-<short id>, ≤ 19 chars
-_UPLOAD_PATH = re.compile(r"^/w/[a-z0-9_]{1,32}\.py$")
+_NAME = re.compile(r"cwd?-[a-z0-9][a-z0-9-]{0,15}")  # CONTRACTS: cw-<short id>, ≤ 19 chars
+_UPLOAD_PATH = re.compile(r"/w/[a-z0-9_]{1,32}\.py")
+# The CLI gets only what it needs to find its gateway config and Docker: never the Warden's
+# secrets (NVIDIA key, device token), which OpenShell could otherwise pick up as credentials.
+_ENV_ALLOWLIST = (
+    "PATH",
+    "HOME",
+    "USER",
+    "LANG",
+    "XDG_CONFIG_HOME",
+    "XDG_RUNTIME_DIR",
+    "DOCKER_HOST",
+    "OPENSHELL_GATEWAY",
+)
 _DENIED = re.compile(r"\bDENIED\b")
 _MAX_OUTPUT_BYTES = 256 * 1024  # watch_output caps stdout at 64 KiB; anything past this is noise
 
@@ -49,16 +64,45 @@ class OpenShellError(RuntimeError):
 
 
 def _check_name(name: str) -> str:
-    if not _NAME.match(name):
+    if not _NAME.fullmatch(name):
         raise ValueError(f"not a Custody watcher sandbox name: {name!r}")
     return name
 
 
 def _check_policy(policy_yaml: str) -> None:
-    """Defence in depth for invariant #2: refuse a policy that isn't plain GET-to-a-path."""
-    for host, _port, method, path in egress_rules(policy_yaml):
-        if method != "GET" or "*" in host or "*" in path or "?" in path:
-            raise ValueError("refusing a policy with a wildcard or non-GET rule")
+    """Defence in depth for invariant #2: a policy read back from the database is applied only
+    if it is exactly what `generate_policy` makes: the fixed baseline, L7-enforced GET rules on
+    valid declared endpoints, and the watcher interpreter as the only binary."""
+    try:
+        doc = yaml.safe_load(policy_yaml)
+        if not isinstance(doc, dict):
+            raise ValueError
+        network = doc.pop("network_policies")
+        if doc != BASELINE or not isinstance(network, dict):
+            raise ValueError
+        for key, entry in network.items():
+            if set(entry) != {"name", "endpoints", "binaries"} or entry["name"] != key:
+                raise ValueError
+            if entry["binaries"] != [{"path": WATCHER_BINARY}]:
+                raise ValueError
+            for endpoint in entry["endpoints"]:
+                if set(endpoint) != {"host", "port", "protocol", "enforcement", "rules"}:
+                    raise ValueError
+                if (endpoint["protocol"], endpoint["enforcement"]) != ("rest", "enforce"):
+                    raise ValueError
+                for rule in endpoint["rules"]:
+                    if set(rule) != {"allow"} or set(rule["allow"]) != {"method", "path"}:
+                        raise ValueError
+                    # Re-validates host (no wildcard, no IP literal), GET-only, canonical path.
+                    Endpoint(
+                        host=endpoint["host"],
+                        port=endpoint["port"],
+                        method=rule["allow"]["method"],
+                        path=rule["allow"]["path"],
+                        why="-",
+                    )
+    except (ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError):
+        raise ValueError("refusing a policy that generate_policy would not have made") from None
 
 
 class OpenShellDriver:
@@ -86,7 +130,7 @@ class OpenShellDriver:
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env={**os.environ, "NO_COLOR": "1"},
+            env={k: os.environ[k] for k in _ENV_ALLOWLIST if k in os.environ} | {"NO_COLOR": "1"},
         )
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -116,6 +160,20 @@ class OpenShellDriver:
             return None
         return phase if isinstance(phase, str) else None
 
+    async def _create(self, name: str, policy: Path) -> None:
+        await self._run(
+            "sandbox", "create",
+            "--name", name,
+            "--from", self._image,
+            "--policy", str(policy),
+            "--cpu", self._cpu,
+            "--memory", self._memory,
+            "--label", "custody=watcher",
+            "--no-auto-providers",
+            "--no-tty",
+            "--detach",
+        )  # fmt: skip
+
     async def create(self, name: str, image: str) -> SandboxHandle:
         """`image` is the logical name used by the compiler ("watcher-base"); the actual
         reference comes from CUSTODY_WATCHER_IMAGE (built by scripts/build-watcher-image.sh)."""
@@ -124,18 +182,13 @@ class OpenShellDriver:
         with tempfile.TemporaryDirectory(prefix="custody-") as tmp:
             policy = Path(tmp) / "baseline.yaml"
             policy.write_text(baseline_policy_yaml())
-            await self._run(
-                "sandbox", "create",
-                "--name", name,
-                "--from", self._image,
-                "--policy", str(policy),
-                "--cpu", self._cpu,
-                "--memory", self._memory,
-                "--label", "custody=watcher",
-                "--no-auto-providers",
-                "--no-tty",
-                "--detach",
-            )  # fmt: skip
+            try:
+                await self._create(name, policy)
+            except BaseException:
+                # The CLI may have created it before failing or timing out: never leave it.
+                with contextlib.suppress(Exception):
+                    await asyncio.shield(self.delete(name))
+                raise
         while (phase := await self._phase(name)) != "Ready":
             if phase in ("Error", "Failed") or time.monotonic() - started > READY_TIMEOUT_S:
                 with contextlib.suppress(Exception):
@@ -161,7 +214,7 @@ class OpenShellDriver:
 
     async def write_file(self, name: str, path: str, content: str) -> None:
         _check_name(name)
-        if not _UPLOAD_PATH.match(path):
+        if not _UPLOAD_PATH.fullmatch(path):
             raise ValueError(f"refusing to upload outside /w/: {path!r}")
         with tempfile.TemporaryDirectory(prefix="custody-") as tmp:
             local = Path(tmp) / Path(path).name

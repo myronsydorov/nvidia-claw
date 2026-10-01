@@ -11,10 +11,12 @@ Everything else is denied by OpenShell's default-deny proxy and logged.
 - `binaries` names the interpreter's real path: OpenShell identifies the caller by it, so
   nothing else in the sandbox (a shell, pip) gets the watcher's egress.
 - The filesystem baseline can't be narrowed on a live sandbox, so `/w` (where run.py is
-  uploaded after create) stays writable; the compiler's gate limits generated `open()` to
-  /tmp/, so approved code can't rewrite itself.
+  uploaded after create) stays writable. The gate limits generated `open()` to /tmp/, and
+  the scheduler re-uploads the approved run.py before every run, so code can't persist a
+  rewrite of itself.
 """
 
+import hashlib
 from typing import Any
 
 import yaml
@@ -24,7 +26,7 @@ from warden.models import PermissionLine
 
 WATCHER_BINARY = "/usr/local/bin/python3.12"  # the real path in custody-watcher images
 
-_BASELINE: dict[str, Any] = {
+BASELINE: dict[str, Any] = {
     "version": 1,
     "filesystem_policy": {
         "include_workdir": False,
@@ -52,12 +54,15 @@ def _dedupe(adapters: list[Adapter]) -> list[Endpoint]:
 
 
 def _policy_key(host: str, port: int) -> str:
-    return "custody_" + host.replace(".", "_").replace("-", "_") + f"_{port}"
+    # Readable (it appears in OpenShell's denial log) and collision-free: `a-b.x` and `a.b.x`
+    # must never share one entry, or the card and the enforced policy would disagree.
+    digest = hashlib.sha256(f"{host}:{port}".encode()).hexdigest()[:8]
+    return "custody_" + host.replace(".", "_").replace("-", "_") + f"_{port}_{digest}"
 
 
 def baseline_policy_yaml() -> str:
     """The policy a watcher sandbox is created with: the baseline and no network at all."""
-    return yaml.safe_dump({**_BASELINE, "network_policies": {}}, sort_keys=False)
+    return yaml.safe_dump({**BASELINE, "network_policies": {}}, sort_keys=False)
 
 
 def generate_policy(adapters: list[Adapter], sandbox_name: str) -> tuple[str, list[PermissionLine]]:
@@ -87,7 +92,7 @@ def generate_policy(adapters: list[Adapter], sandbox_name: str) -> tuple[str, li
         for (host, port), group in groups.items()
     }
     header = f"# Custody watcher policy for {sandbox_name}: generated from adapter declarations\n"
-    document = {**_BASELINE, "network_policies": network_policies}
+    document = {**BASELINE, "network_policies": network_policies}
     policy_yaml = header + yaml.safe_dump(document, sort_keys=False, default_flow_style=False)
     policy_summary = [
         PermissionLine(method=e.method, host=e.host, path=e.path, why=e.why) for e in endpoints

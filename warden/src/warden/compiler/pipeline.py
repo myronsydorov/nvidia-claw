@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from warden.adapters.base import Adapter
-from warden.compiler import codegen, gate, guard
+from warden.compiler import codegen, gate, guard, hosts
 from warden.compiler.dryrun import dry_run
 from warden.compiler.llm import LLMClient, LLMError
 from warden.compiler.policy import generate_policy
@@ -171,6 +171,9 @@ class Compiler:
                 + guard.untrusted(listing, "checker", max_chars=1500),
                 candidate,
             )
+        problem = await hosts.non_public_host((e.host, e.port) for e in endpoints)
+        if problem is not None:
+            return "Problem:\n" + guard.untrusted(problem, "checker", max_chars=300), candidate
         result = await dry_run(self._driver, built.adapters, built.code)
         if not result.ok:
             return guard.dry_run_feedback(result.exec_result, result.problem), candidate

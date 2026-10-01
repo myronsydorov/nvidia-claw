@@ -84,8 +84,11 @@ def test_parse_https_url_defaults_empty_path_to_root() -> None:
     assert parse_https_url("https://example.com") == ("example.com", 443, "/")
 
 
-def test_parse_https_url_honors_explicit_port() -> None:
-    assert parse_https_url("https://example.com:8443/a") == ("example.com", 8443, "/a")
+def test_parse_https_url_refuses_a_non_standard_port() -> None:
+    # T-04 security review: a worry-supplied URL may not pick a port (internal admin services).
+    assert parse_https_url("https://example.com:443/a") == ("example.com", 443, "/a")
+    with pytest.raises(ValueError):
+        parse_https_url("https://example.com:8443/a")
 
 
 @pytest.mark.parametrize("url", ["http://example.com/a", "ftp://example.com/a"])
@@ -160,6 +163,7 @@ def test_canonical_path_matches_openshell(raw: str, canonical: str) -> None:
     [
         "/a%2Fb",  # encoded slash: OpenShell refuses it (allow_encoded_slash is never set)
         "/a%2fb",
+        "/a%5C..%5Cb",  # encoded backslash: some servers treat it as a separator
         "/a%00",  # control bytes
         "/a%0a",
         "/a%7F",

@@ -5,7 +5,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from warden.compiler import Compiler
+from warden.compiler import Compiler, hosts
+from warden.compiler.policy import egress_rules
 from warden.db import Store
 from warden.ids import new_worry_id
 from warden.models import (
@@ -128,6 +129,13 @@ async def approve_worry(worry_id: str, request: Request) -> WorryDetail:
         row = await _row(store, worry_id)
         worry = Worry.model_validate(row["worry"])
         watcher = await _require_awaiting_approval(store, worry)
+
+        # Again at approve: a name's DNS answer may have changed since the dry run.
+        problem = await hosts.non_public_host(
+            (host, port) for host, port, _, _ in egress_rules(watcher.policy_yaml)
+        )
+        if problem is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=problem)
 
         driver = get_driver(request)
         await driver.create(watcher.sandbox_name, image="watcher-base")
