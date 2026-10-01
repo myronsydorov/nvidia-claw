@@ -26,7 +26,7 @@ Rules:
 import ast
 from urllib.parse import urlsplit
 
-from warden.adapters.base import Endpoint
+from warden.adapters.base import Endpoint, canonical_path
 
 MAX_BYTES = 8 * 1024
 MAX_LINES = 250
@@ -295,7 +295,12 @@ class _Visitor(ast.NodeVisitor):
         if parts.scheme != "https":
             self._bad(node, "only https URLs are allowed")
             return
-        path = parts.path or "/"
+        try:
+            # Compared in OpenShell's canonical form, the same form the policy rule holds.
+            path = canonical_path(parts.path or "/")
+        except ValueError:
+            self._bad(node, "URL path can't be declared safely")
+            return
         same_host = [e for e in self.endpoints if e.host == host and e.port == port]
         if not same_host:
             self._bad(node, f"URL host {host!r} is not declared by this watcher's adapters")

@@ -29,9 +29,17 @@ def test_factory_returns_mock_driver_when_configured(monkeypatch: pytest.MonkeyP
     assert isinstance(get_sandbox_driver(), MockDriver)
 
 
-def test_factory_raises_for_unconfigured_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_factory_defaults_to_the_openshell_driver(monkeypatch: pytest.MonkeyPatch) -> None:
+    from warden.sandbox.openshell import OpenShellDriver
+
     monkeypatch.delenv("CUSTODY_SANDBOX", raising=False)
-    with pytest.raises(NotImplementedError):
+    monkeypatch.setenv("OPENSHELL_BIN", "/nonexistent/openshell")
+    assert isinstance(get_sandbox_driver(), OpenShellDriver)
+
+
+def test_factory_refuses_an_unknown_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CUSTODY_SANDBOX", "docker")
+    with pytest.raises(ValueError):
         get_sandbox_driver()
 
 

@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: setup dev relay lint typecheck test e2e eval-compiler spike
+.PHONY: setup dev relay lint typecheck test e2e eval-compiler spike watcher-image
 
 setup:
 	uv sync --all-packages
@@ -44,6 +44,10 @@ eval-compiler:
 	@set -a; [ -f .env ] && . ./.env; set +a; \
 	CUSTODY_SANDBOX=mock uv run --package warden python warden/evals/run_compiler_eval.py $(ARGS)
 
+# Live, needs an OpenShell host: build the watcher image, then create -> policy -> exec -> deny -> delete.
 spike:
-	@echo "T-04 spike stub: openshell sandbox create -> policy set --wait -> exec run.py -> delete."
-	@echo "Not implemented yet — needs a NemoClaw host. See docs/adr/0001-sandbox-per-watcher.md."
+	scripts/build-watcher-image.sh
+	uv run --package warden python scripts/spike_sandbox.py
+
+watcher-image:
+	scripts/build-watcher-image.sh

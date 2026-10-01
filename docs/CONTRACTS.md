@@ -69,7 +69,10 @@ Adapter(
 ```
 Every `Endpoint.path` is an exact literal path, never a prefix or wildcard — a dynamic identifier
 (a tracking number, a stop ID) belongs in the query string, or gets baked into one exact path
-string at declare-time. `Endpoint.why` becomes `PermissionLine.why` on the generated policy card,
+string at declare-time. Paths are written in **OpenShell's canonical form** (ADR-0001, T-04): escapes of
+path-legal characters decoded (`%40`→`@`), every other escape kept as upper-case `%XX` (`%23`, `%20`),
+no `*`, `;`, `%2F`, control bytes, dot or empty segments; `parse_https_url` canonicalizes a
+worry-supplied URL (`adapters.base.canonical_path`). `Endpoint.why` becomes `PermissionLine.why` on the generated policy card,
 so it is declared once per endpoint, not threaded through separately. Adapters with a provider host
 fixed at build time (`parcel_dhl`, `weather_openmeteo`, `flight_status`) expose a static
 `ADAPTER: Adapter` constant; adapters whose host and/or path a worry supplies at compile time

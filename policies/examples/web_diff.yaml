@@ -1,8 +1,34 @@
-# provisional policy schema — real OpenShell CLI syntax pinned by T-04 (ADR-0001)
-sandbox: cw-web-diff1
-egress:
-- host: visa.example.com
-  port: 443
-  method: GET
-  path: /appointments
-  why: check for a new visa appointment slot
+# Custody watcher policy for cw-web-diff1: generated from adapter declarations
+version: 1
+filesystem_policy:
+  include_workdir: false
+  read_only:
+  - /usr
+  - /lib
+  - /proc
+  - /dev/urandom
+  - /etc
+  read_write:
+  - /tmp
+  - /dev/null
+  - /sandbox
+  - /w
+landlock:
+  compatibility: strict
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+network_policies:
+  custody_visa_example_com_443:
+    name: custody_visa_example_com_443
+    endpoints:
+    - host: visa.example.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: GET
+          path: /appointments
+    binaries:
+    - path: /usr/local/bin/python3.12

@@ -5,10 +5,13 @@ from warden.sandbox.mock import MockDriver
 
 
 def get_sandbox_driver() -> SandboxDriver:
-    mode = os.environ.get("CUSTODY_SANDBOX")
+    """CUSTODY_SANDBOX=mock for local development; `openshell` (or unset) for the real one."""
+    mode = os.environ.get("CUSTODY_SANDBOX") or "openshell"
     if mode == "mock":
         return MockDriver()
-    raise NotImplementedError(
-        f"CUSTODY_SANDBOX={mode!r} has no driver yet; the real OpenShell driver lands in T-04. "
-        "Set CUSTODY_SANDBOX=mock for local development."
-    )
+    if mode == "openshell":
+        # Imported lazily: the driver reads the compiler's policy helpers, which import us.
+        from warden.sandbox.openshell import OpenShellDriver
+
+        return OpenShellDriver()
+    raise ValueError(f"CUSTODY_SANDBOX={mode!r}: expected 'mock' or 'openshell'")

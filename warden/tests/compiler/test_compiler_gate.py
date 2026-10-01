@@ -1,7 +1,7 @@
 """The static gate: only watcher_runtime imports, no escape hatches, declared URLs only."""
 
 import pytest
-from warden.adapters import parcel_dhl, web_diff
+from warden.adapters import ics_calendar, parcel_dhl, web_diff
 from warden.compiler.gate import MAX_BYTES, GateError, check
 
 PAGE = "https://www.example.org/tickets"
@@ -158,3 +158,28 @@ def test_size_limit() -> None:
 def test_must_emit() -> None:
     code = "from watcher_runtime import harness\nx = harness.now()\n"
     assert "never calls harness.emit" in problems(code)
+
+
+GCAL = (
+    "https://calendar.google.com/calendar/ical/"
+    "de.german%23holiday%40group.v.calendar.google.com/public/basic.ics"
+)
+
+
+def test_a_percent_encoded_url_passes_against_its_canonical_declaration() -> None:
+    # T-04: declared as '/…/de.german%23holiday@group…' (OpenShell's canonical form).
+    cal = ics_calendar.declare(url=GCAL, why="check the school calendar")
+    gate(
+        "from watcher_runtime import harness\n"
+        "from watcher_runtime.adapters import ics_calendar\n"
+        f'events = ics_calendar.fetch("{GCAL}")\n'
+        "harness.emit('ok', 'fine', 'calendar')\n",
+        [cal],
+    )
+
+
+@pytest.mark.parametrize("path", ["/a%2F..%2Fadmin", "/tickets/*", "/x/../tickets", "/tickets;x"])
+def test_a_url_whose_path_cannot_be_declared_is_refused(path: str) -> None:
+    url = f"https://www.example.org{path}"
+    found = problems(f"from watcher_runtime import harness\nharness.emit('ok', '{url}', 'y')\n")
+    assert "can't be declared safely" in found

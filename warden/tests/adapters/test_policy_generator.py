@@ -1,7 +1,12 @@
 import pytest
 import yaml
 from warden.adapters.base import Adapter, Endpoint
-from warden.compiler.policy import generate_policy
+from warden.compiler.policy import (
+    WATCHER_BINARY,
+    baseline_policy_yaml,
+    egress_rules,
+    generate_policy,
+)
 from warden.models import PermissionLine
 
 DHL = Adapter(
@@ -18,8 +23,7 @@ WEATHER = Adapter(
 
 
 def _egress_tuples(policy_yaml: str) -> set[tuple[str, int, str, str]]:
-    doc = yaml.safe_load(policy_yaml)
-    return {(e["host"], e["port"], e["method"], e["path"]) for e in doc["egress"]}
+    return egress_rules(policy_yaml)
 
 
 def test_generates_one_egress_rule_per_endpoint() -> None:
@@ -84,6 +88,47 @@ def test_round_trips_through_yaml_with_no_widening_or_dropped_rules() -> None:
     assert _egress_tuples(policy_yaml) == expected
 
 
-def test_policy_yaml_includes_a_provisional_schema_header() -> None:
+def test_policy_yaml_names_its_sandbox_in_a_header_comment() -> None:
     policy_yaml, _ = generate_policy([DHL], sandbox_name="cw-test8")
-    assert policy_yaml.startswith("# provisional policy schema")
+    assert policy_yaml.startswith("# Custody watcher policy for cw-test8:")
+
+
+def test_policy_uses_the_openshell_schema_pinned_by_the_spike() -> None:
+    doc = yaml.safe_load(generate_policy([DHL, WEATHER], sandbox_name="cw-test9")[0])
+    assert doc["version"] == 1
+    assert doc["landlock"] == {"compatibility": "strict"}
+    assert doc["process"] == {"run_as_user": "sandbox", "run_as_group": "sandbox"}
+    assert "/w" in doc["filesystem_policy"]["read_write"]
+    assert doc["filesystem_policy"]["include_workdir"] is False
+    assert len(doc["network_policies"]) == 2  # one entry per host:port
+    for entry in doc["network_policies"].values():
+        assert entry["binaries"] == [{"path": WATCHER_BINARY}]
+        for endpoint in entry["endpoints"]:
+            assert endpoint["protocol"] == "rest"  # L7: method and path are checked
+            assert endpoint["enforcement"] == "enforce"
+            assert "allow_encoded_slash" not in endpoint
+            assert endpoint["rules"]
+            assert all(r["allow"]["method"] == "GET" for r in endpoint["rules"])
+
+
+def test_two_paths_on_one_host_share_one_entry() -> None:
+    two = Adapter(
+        name="two_paths",
+        endpoints=[
+            Endpoint(host="api.example.com", path="/a", why="a"),
+            Endpoint(host="api.example.com", path="/b", why="b"),
+        ],
+        description="two paths on one host",
+    )
+    doc = yaml.safe_load(generate_policy([two], sandbox_name="cw-test10")[0])
+    assert len(doc["network_policies"]) == 1
+    assert egress_rules(yaml.safe_dump(doc)) == {
+        ("api.example.com", 443, "GET", "/a"),
+        ("api.example.com", 443, "GET", "/b"),
+    }
+
+
+def test_baseline_policy_allows_no_network() -> None:
+    doc = yaml.safe_load(baseline_policy_yaml())
+    assert doc["network_policies"] == {}
+    assert egress_rules(baseline_policy_yaml()) == set()

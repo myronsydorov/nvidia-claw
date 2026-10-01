@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from warden.adapters.base import Adapter, Endpoint, parse_https_url
+from warden.adapters.base import Adapter, Endpoint, canonical_path, parse_https_url
 
 
 def _endpoint(**overrides: object) -> Endpoint:
@@ -111,3 +111,87 @@ def test_parse_https_url_rejects_bare_ip_literals(url: str) -> None:
 def test_parse_https_url_rejects_missing_hostname() -> None:
     with pytest.raises(ValueError, match="hostname"):
         parse_https_url("https:///a")
+
+
+# --- T-04: paths are declared in OpenShell's canonical form -------------------------------
+# Measured on OpenShell 0.0.116 (ADR-0001 spike): the proxy decodes escapes of path-legal
+# characters, keeps every other escape encoded, and compares the result literally against
+# the rule. These cases mirror what it did.
+
+_GCAL = (
+    "https://calendar.google.com/calendar/ical/"
+    "de.german%23holiday%40group.v.calendar.google.com/public/basic.ics"
+)
+
+
+def test_parse_https_url_canonicalizes_a_google_calendar_ics_link() -> None:
+    host, port, path = parse_https_url(_GCAL)
+    assert (host, port) == ("calendar.google.com", 443)
+    # %40 -> '@' (OpenShell decodes it); %23 stays encoded (OpenShell keeps it).
+    assert path == "/calendar/ical/de.german%23holiday@group.v.calendar.google.com/public/basic.ics"
+    assert _endpoint(host=host, path=path).path == path
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [
+        ("/v1/forecast", "/v1/forecast"),
+        ("/v1/a%40b", "/v1/a@b"),
+        ("/v1/e%2bf", "/v1/e+f"),
+        ("/v1/g%3ah", "/v1/g:h"),
+        ("/v1/t%7el", "/v1/t~l"),
+        ("/v1/%46orecast", "/v1/Forecast"),
+        ("/v1/c%23d", "/v1/c%23d"),
+        ("/v1/sp%20ace", "/v1/sp%20ace"),
+        ("/v1/pct%25x", "/v1/pct%25x"),
+        ("/v1/q%3fx", "/v1/q%3Fx"),
+        ("/stra%c3%9fe", "/stra%C3%9Fe"),
+        ("/straße", "/stra%C3%9Fe"),
+        ("/v1/forecast/", "/v1/forecast/"),
+        ("/", "/"),
+    ],
+)
+def test_canonical_path_matches_openshell(raw: str, canonical: str) -> None:
+    assert canonical_path(raw) == canonical
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "/a%2Fb",  # encoded slash: OpenShell refuses it (allow_encoded_slash is never set)
+        "/a%2fb",
+        "/a%00",  # control bytes
+        "/a%0a",
+        "/a%7F",
+        "/a%zz",  # malformed escapes
+        "/a%4",
+        "/a/*",  # a glob
+        "/a%2Ab",  # decodes to a glob
+        "/a;b",  # a path parameter OpenShell strips before matching
+        "/a%3Bb",
+        "/a/../b",  # dot segments OpenShell would resolve
+        "/a/%2e%2e/b",
+        "/./a",
+        "//a",  # empty segments OpenShell would merge
+        "/a//b",
+        "/a b",
+        "/a!b",
+        "/a(b)",
+        "no-slash",
+    ],
+)
+def test_canonical_path_refuses_what_cannot_be_declared_safely(raw: str) -> None:
+    with pytest.raises(ValueError):
+        canonical_path(raw)
+
+
+@pytest.mark.parametrize("path", ["/v1/a%40b", "/v1/e%2Bf", "/v1/q%3fx"])
+def test_endpoint_rejects_a_non_canonical_path(path: str) -> None:
+    # As a rule, '/v1/a%40b' never matches anything: OpenShell compares against '/v1/a@b'.
+    # Kept escapes are written with upper-case hex ('%3F', not '%3f').
+    with pytest.raises(ValidationError):
+        _endpoint(path=path)
+
+
+def test_endpoint_accepts_a_kept_escape() -> None:
+    assert _endpoint(path="/v1/c%23d").path == "/v1/c%23d"
