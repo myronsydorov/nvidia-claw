@@ -29,6 +29,24 @@
 	}
 }
 
+html,
+body {
+	background: var(--bg);
+}
+
+/* iOS home-screen app with a translucent status bar: the page runs under the clock. The top
+   padding only protects the first screen; this strip keeps scrolled content from sliding
+   under the status bar. */
+body::before {
+	content: "";
+	position: fixed;
+	inset: 0 0 auto 0;
+	height: env(safe-area-inset-top, 0px);
+	background: var(--bg);
+	z-index: 50;
+	pointer-events: none;
+}
+
 @theme inline {
 	--color-bg: var(--bg);
 	--color-surface: var(--surface);

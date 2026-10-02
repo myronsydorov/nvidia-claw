@@ -4,7 +4,12 @@ import type { WorryDetail as Detail } from "../api/schemas";
 import { PermissionCard } from "../components/PermissionCard";
 import { BackLink, Button, Screen, SectionLabel } from "../components/ui";
 import { asksOutcome, evidenceRows } from "../lib/evidence";
-import { adapterLabel, statusLabel } from "../lib/labels";
+import {
+	adapterLabel,
+	fearLine,
+	sourceLabel,
+	statusLabel,
+} from "../lib/labels";
 import { navigate } from "../lib/router";
 import { ago, day, every } from "../lib/time";
 import { useAsync, useLiveEvents } from "../lib/useAsync";
@@ -66,9 +71,11 @@ function Body({ initial }: { initial: Detail }) {
 				<h1 className="mt-5 font-display text-[30px] leading-tight font-light">
 					{worry.text}
 				</h1>
-				<p className="mt-3 text-[15px] leading-relaxed text-muted">
-					The fear: {worry.fear.charAt(0).toLowerCase() + worry.fear.slice(1)}.
-				</p>
+				{worry.fear && (
+					<p className="mt-3 text-[15px] leading-relaxed text-muted">
+						{fearLine(worry.fear)}
+					</p>
+				)}
 				{worry.resolution && (
 					<p className="mt-2 text-[15px] text-muted">{worry.resolution}</p>
 				)}
@@ -130,7 +137,8 @@ function Body({ initial }: { initial: Detail }) {
 						{last.summary}
 					</p>
 					<p className="mt-1 text-sm text-faint">
-						Seen {ago(last.evidence.checked_at)} · {last.evidence.source}
+						Seen {ago(last.evidence.checked_at)} ·{" "}
+						{sourceLabel(last.evidence.source)}
 					</p>
 					{evidenceRows(last).length > 0 && (
 						<dl className="mt-4 divide-y divide-line border-t border-line">
@@ -150,7 +158,8 @@ function Body({ initial }: { initial: Detail }) {
 					<SectionLabel>Last check</SectionLabel>
 					<p className="text-[16px] leading-relaxed text-ink">{last.summary}</p>
 					<p className="mt-1 text-sm text-faint">
-						{ago(last.evidence.checked_at)} · {last.evidence.source}
+						{ago(last.evidence.checked_at)} ·{" "}
+						{sourceLabel(last.evidence.source)}
 					</p>
 				</section>
 			)}

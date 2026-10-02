@@ -3,7 +3,7 @@ import { api } from "../api/client";
 import type { WorrySummary } from "../api/schemas";
 import { Orb, Screen, SectionLabel } from "../components/ui";
 import { evidenceRows } from "../lib/evidence";
-import { statusLabel } from "../lib/labels";
+import { sourceLabel, statusLabel } from "../lib/labels";
 import { href, navigate } from "../lib/router";
 import { ago } from "../lib/time";
 import { useAsync, useLiveEvents } from "../lib/useAsync";
@@ -73,7 +73,7 @@ function AlertCard({ item }: { item: WorrySummary }) {
 				<p className="mt-1 truncate text-sm text-muted">{worry.text}</p>
 				{last_result && (
 					<p className="mt-3 text-sm text-faint">
-						{last_result.evidence.source} ·{" "}
+						{sourceLabel(last_result.evidence.source)} ·{" "}
 						{ago(last_result.evidence.checked_at)}
 						{rows.map((r) => ` · ${r.key}: ${r.value}`).join("")}
 					</p>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Custody</title>
+  <rect width="512" height="512" fill="#161412"/>
+  <circle cx="256" cy="256" r="150" fill="#b3a6d4" fill-opacity="0.14"/>
+  <circle cx="256" cy="256" r="96" fill="#b3a6d4" fill-opacity="0.28"/>
+  <circle cx="256" cy="256" r="48" fill="#b3a6d4" fill-opacity="0.85"/>
+</svg>

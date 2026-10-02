@@ -16,7 +16,7 @@ const adapterNames: Record<string, string> = {
 	rss: "a news feed",
 	web_diff: "a web page",
 	imap_search: "your inbox",
-	ics_calendar: "your calendar",
+	ics_calendar: "a calendar",
 	weather_openmeteo: "the Open-Meteo forecast",
 	transit_bvg: "BVG departures",
 	parcel_dhl: "DHL parcel tracking",
@@ -25,4 +25,18 @@ const adapterNames: Record<string, string> = {
 
 export function adapterLabel(name: string): string {
 	return adapterNames[name] ?? name;
+}
+
+/** "The fear: …" exactly as triage wrote it: never re-cased, so names keep their capitals
+ *  ("S-Bahn", "Open-Meteo", "Lena"). Only a trailing full stop is normalised. */
+export function fearLine(fear: string): string {
+	const text = fear.trim().replace(/[.\s]+$/, "");
+	return text ? `The fear: ${text}.` : "";
+}
+
+/** Where a check's evidence came from. Watchers sometimes name their adapter ("weather_openmeteo");
+ *  show its plain name then, otherwise the source as written. */
+export function sourceLabel(source: string): string {
+	const name = adapterNames[source];
+	return name ? name.replace(/^(a|an|the|your) /, "") : source;
 }
