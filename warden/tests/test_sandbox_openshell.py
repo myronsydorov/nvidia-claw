@@ -38,6 +38,10 @@ elif args[:2] == ["sandbox", "create"] and mode == "create_fails":
     sys.stderr.write("secret-looking detail"); sys.exit(1)
 elif args[:2] == ["sandbox", "delete"] and mode == "gone":
     sys.stderr.write("Error: sandbox not found"); sys.exit(1)
+elif args[:2] == ["sandbox", "list"]:
+    brain = {{"name": "custody-brain", "phase": "Ready", "labels": {{}}}}
+    watcher = {{"name": "cw-abc123", "phase": "Ready", "labels": {{"custody": "watcher"}}}}
+    print(json.dumps([brain, watcher]))
 elif args[0] == "logs":
     print("[1] [sandbox] [OCSF ] NET:OPEN [MED] DENIED python3.12(53) -> example.com:443")
     print("[2] [sandbox] [INFO ] something else")
@@ -227,3 +231,10 @@ def test_ensure_running_reports_ready_sandboxes(fake: tuple[OpenShellDriver, Pat
     driver, log = fake
     assert asyncio.run(driver.ensure_running("cw-abc123")) is True
     assert [c["args"][:2] for c in _calls(log)] == [["sandbox", "get"]]
+
+
+def test_list_sandboxes_is_read_only_and_marks_watchers(fake: tuple[OpenShellDriver, Path]) -> None:
+    driver, log = fake
+    rows = asyncio.run(driver.list_sandboxes())
+    assert rows == [("custody-brain", "Ready", False), ("cw-abc123", "Ready", True)]
+    assert [c["args"] for c in _calls(log)] == [["sandbox", "list", "-o", "json"]]

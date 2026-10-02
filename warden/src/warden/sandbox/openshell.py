@@ -251,6 +251,24 @@ class OpenShellDriver:
                 await asyncio.sleep(0.25)
         return True
 
+    async def list_sandboxes(self) -> list[tuple[str, str, bool]]:
+        """Read-only: every sandbox OpenShell knows, as (name, phase, is_custody_watcher).
+
+        For evidence (scripts/demo-evidence.sh); not served over /api. Includes the brain."""
+        out = await self._run("sandbox", "list", "-o", "json", timeout=30)
+        try:
+            items = json.loads(out.stdout)
+        except ValueError:
+            raise OpenShellError("openshell sandbox list gave no JSON") from None
+        rows: list[tuple[str, str, bool]] = []
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            labels = item.get("labels")
+            watcher = isinstance(labels, dict) and labels.get("custody") == "watcher"
+            rows.append((str(item.get("name", "?")), str(item.get("phase", "?")), watcher))
+        return rows
+
     async def denials(self, name: str, since: str = "1h") -> list[str]:
         """OpenShell's own log lines for egress it denied in this sandbox (OCSF `DENIED`).
 
