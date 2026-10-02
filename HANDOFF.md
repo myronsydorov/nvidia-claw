@@ -10,6 +10,8 @@ _(filled in at the end of the session)_
 |---|---|---|
 | 1 | Stop lookup failure | **done**: cause = BVG's API down (503); lookup now has timeout + 2 retries + disk cache; deployed |
 | 2 | Transit defaults | **done**: direction of travel + cancelled or ≥ 10 min, enforced; deployed; image rebuilt |
+| 3 | Test health | **done**: 616 Python + 87 app + e2e 2 + e2e:mock 14 all pass; "577" explained (nothing lost); events tests made event-driven; an L2 race fixed; **CI was red on every push (pnpm version) and is now green** |
+| 4 | Last night's list | done (status below); added a daily DB backup timer and a boot unit for restart.sh |
 
 ### 1. The 08:17 stop lookup failure: BVG's public API was down
 Warden log (journal, UTC; 08:17 Berlin = 06:17 UTC). Three hand-overs, each one BVG lookup, each `503`:
@@ -41,6 +43,37 @@ By hand from the host at 06:27 UTC, 5 tries: `503` after 10.1 s each time (`serv
 - **Live check** (Nemotron, codegen only, no hand-over, no worry created): "S7 from Lichtenberg to Potsdam Hbf … tomorrow ~9:00" built on attempt 1 with `toward="Potsdam Hbf"`, `min_delay_min=10`, stop from the cache while BVG was down.
 - Watcher image rebuilt (`custody-watcher:3ca421840c4e` → `:latest`). Running watchers keep their image, and the change is additive.
 - The S7 worry was **not** handed over again.
+
+### 3. Test health
+Run at `c431383`, against the current build:
+- **Python** `uv run pytest -q`: **616 passed**.
+- **App** `pnpm -C app test`: **87 passed** (×3).
+- **e2e (real Warden)** `make e2e`: **2 passed**.
+- **e2e:mock** `pnpm -C app e2e:mock`: **14 passed**.
+- lint ✓, typecheck ✓.
+
+**580 → 577: no tests went away.** The two numbers came from different commands in last night's session log:
+- 17:29 UTC: full suite `uv run pytest -q` → `1 failed, 580 passed` (581 collected at `a2a7e39`; the failure was `test_l2_end_to_end`, a race, fixed below).
+- 23:06 UTC: `uv run pytest -q warden/tests` → `577 passed`. That run only covers `warden/tests`.
+- At that commit (`5ea5dd3`) the full suite was **601** = 577 in `warden/tests` + 24 elsewhere (17 `relay/tests/test_relay.py`, 7 `watcher_runtime/tests`).
+- Collected counts per commit (via a worktree) rise monotonically: 458 → 524 → 556 → 561 → 576 → 581 → 589 → 592 → 598 → 599 → 600 → 601.
+- The only IDs that disappeared between 581 and 601 were **two renames** when build failures became `failed` instead of `parked`: `test_model_outage_parks_with_an_honest_reason` → `test_model_outage_fails_naming_the_phase`, and `test_three_failures_park_honestly_and_keep_the_failed_watcher` → `test_three_failures_fail_honestly_and_leave_nothing_behind`.
+
+**Flaky tests:**
+- `events.test.ts` passed 15/15 alone and 20/20 under 4× parallel load today, so I couldn't reproduce it. The mechanism was real, though: a fixed 5 ms tick in the 401 test, and 1 s wall-clock polls elsewhere. Every wait now resumes on the stream's own callback, with no wall-clock bound. A mutation check (a 401 that retries) fails the test.
+- `test_l2_end_to_end` (`'waiting' == 'paired'`) was a **product race**: the peer was listed before its pairing row said done. Both writes and the status read now share one lock. 5/5 green.
+
+**CI was red on every push since T-03** ("No pnpm version is specified", before any test ran). I pinned pnpm 9.15.9, and **CI is green** from `e98dccf` on.
+
+### 4. Last night's list
+I found no written list in the repo or the session log, so this is from the evidence on the host:
+| Item | State |
+|---|---|
+| Anna setup + `docs/ANNA_SETUP.md` | **not started** at 09:00 (→ block 6 today) |
+| Privacy-proof script | **not started** (→ blocks 5 and 10: `scripts/demo-evidence.sh` dumps the relay) |
+| Services enabled at boot | **done** (was partly). `systemctl --user is-enabled`: custody-relay, custody-warden, custody-app, custody-ufw-brain.timer, nemoclaw-openshell-gateway = enabled; system docker and tailscaled = enabled; Linger=yes. The brain sandbox and gateway-token refresh only came back via a manual `restart.sh`; the new **`custody-boot.service`** (enabled) runs it at boot. Started under systemd just now → `HEALTHY in 30s`, Result=success. **No reboot was run.** |
+| Database backup | **done** (was partly: two manual snapshots). **`custody-backup.timer`** (daily + 10 min after boot) → `~/.local/share/custody/backups/{warden,relay}-<UTC>.db`, online backup + integrity check, keeps 14. First run 06:55 UTC ✓. Manual snapshots: `warden.db.bak-20261002-s7`, `warden.db.bak-20261002-0835`. |
+| README | **partly**: pitch and the ADR-0003 limit are there; the quickstart says "Filled in by task T-21" (→ block 11) |
 
 ---
 
