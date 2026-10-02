@@ -249,3 +249,7 @@ async def test_gateway_ignores_proxy_settings(monkeypatch: pytest.MonkeyPatch) -
     brain = GatewayBrain("http://127.0.0.1:18789", "t", transport=httpx.MockTransport(handler))
     assert await brain.chat("s", "sys", "hi") == "ok"
     assert seen[0].url.host == "127.0.0.1"
+
+
+def test_clean_drops_markdown_marks() -> None:
+    assert clean("## Today\n1. **Rain** - `ok`", 100) == "Today\n1. Rain - ok"

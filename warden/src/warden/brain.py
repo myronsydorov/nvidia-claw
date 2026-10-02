@@ -43,6 +43,7 @@ def without_links(text: str) -> str:
 
 def clean(text: str, limit: int) -> str:
     text = _CONTROL.sub("", text).replace("\r\n", "\n").strip()
+    text = re.sub(r"\*\*|__|`|^#{1,6} ", "", text, flags=re.M)  # shown as plain text: no markdown
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
