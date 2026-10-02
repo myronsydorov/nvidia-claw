@@ -51,13 +51,16 @@ def failure_sentence(phase: str, detail: str = "") -> str:
     sentences = {
         "understanding": "Understanding it failed: the language model gave no usable answer.",
         "writing": "Writing the watcher failed: no version passed my safety checks.",
-        "lookup": "Looking it up failed: the stop search didn't answer.",
+        "lookup": (
+            "Looking up the stop failed: BVG's public timetable service isn't answering right now."
+        ),
         "testing": f"Testing the watcher failed: {detail or 'the test run did not pass'}.",
     }
     return (
         sentences.get(phase, "Setting it up failed because something broke on my side.")
         + " Nothing was set up; you can try again."
     )
+
 
 @dataclass
 class CompileOutcome:

@@ -334,3 +334,52 @@ async def test_missing_input_parks_once_with_an_actionable_reason(store: Store) 
     assert outcome.attempts == 1  # no retry: it would only invent another URL
     assert [s for s, _ in llm.calls].count("codegen") == 1
     assert watcher is None and driver.created == []  # never reached a sandbox
+
+
+async def test_bvg_down_is_a_lookup_failure_naming_bvg(
+    store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 2026-10-02, 08:17 Berlin: BVG's /locations answered 503 on every try.
+    import httpx2 as httpx
+    from warden.adapters import bvg_lookup
+    from warden.compiler import codegen
+
+    text = "What if the S7 from Lichtenberg is cancelled at 9:00?"
+    row = await store.worries.get(WORRY_ID)
+    assert row is not None
+    worry, timeline = parse_row(row)
+    await save_worry(store, worry.model_copy(update={"text": text}), timeline)
+    calls: list[str] = []
+
+    async def down(path: str, params: dict[str, str]) -> object:
+        calls.append(path)
+        request = httpx.Request("GET", "https://v6.bvg.transport.rest" + path)
+        response = httpx.Response(503, request=request)
+        raise httpx.HTTPStatusError("503", request=request, response=response)
+
+    async def no_sleep(seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(bvg_lookup, "fetch", down)
+    monkeypatch.setattr(bvg_lookup, "sleep", no_sleep)
+    plan = {"adapters": [{"name": "transit_bvg", "params": {"stop": "Lichtenberg", "line": "S7"}}],
+            "interval_s": 300}  # fmt: skip
+    code = (
+        "from watcher_runtime import harness\nfrom watcher_runtime.adapters import transit_bvg\n"
+        f'STOP_ID = "{codegen.STOP_PLACEHOLDER}"\ndata = transit_bvg.fetch(STOP_ID)\n'
+        'harness.emit("ok", "S7 looks normal.", "BVG")\n'
+    )
+    answer = f"```json\n{json.dumps(plan)}\n```\n```python\n{code}```"
+    driver = ScriptedDriver()
+    c, _ = compiler(store, ScriptedLLM([TRAIN["triage"]], [answer]), driver)
+
+    await c.compile_worry(WORRY_ID)
+
+    worry, kinds, watcher = await load(store)
+    assert worry.status == "failed" and kinds[-1] == "failed"
+    assert worry.resolution == (
+        "Looking up the stop failed: BVG's public timetable service isn't answering right now."
+        " Nothing was set up; you can try again."
+    )
+    assert len(calls) == 3  # one try + two retries
+    assert watcher is None and driver.created == []

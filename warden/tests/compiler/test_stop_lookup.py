@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx2 as httpx
 import pytest
 from warden.adapters import bvg_lookup
 from warden.compiler import codegen, gate
@@ -110,3 +111,92 @@ def test_only_stop_names_from_the_worry_are_looked_up() -> None:
     assert codegen.stop_queries(invented, S7_WORRY) == []
     long = answer({"stop": S7_WORRY, "line": "S7"}, codegen.STOP_PLACEHOLDER)
     assert codegen.stop_queries(long, S7_WORRY) == []  # the whole worry: over the length cap
+
+
+# Stop-lookup incident (2026-10-02, 08:17 Berlin): BVG answered 503 three hand-overs in a row.
+
+
+def _status_error(code: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("GET", "https://v6.bvg.transport.rest/locations")
+    response = httpx.Response(code, request=request)
+    return httpx.HTTPStatusError("x", request=request, response=response)
+
+
+@pytest.fixture
+def no_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    slept: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr(bvg_lookup, "sleep", fake_sleep)
+    return slept
+
+
+def _flaky(monkeypatch: pytest.MonkeyPatch, failures: list[Exception]) -> list[str]:
+    calls: list[str] = []
+
+    async def fake(path: str, params: dict[str, str]) -> Any:
+        calls.append(path)
+        if failures:
+            raise failures.pop(0)
+        return json.loads(FIXTURE.read_text())
+
+    monkeypatch.setattr(bvg_lookup, "fetch", fake)
+    return calls
+
+
+def test_a_503_then_a_timeout_is_retried_with_backoff(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+) -> None:
+    calls = _flaky(monkeypatch, [_status_error(503), httpx.ReadTimeout("slow")])
+    stop = asyncio.run(bvg_lookup.find_stop("Lichtenberg", "S7"))
+    assert stop is not None and stop.id == "900160004"
+    assert len(calls) == 3
+    assert no_sleep == [1.0, 3.0]
+
+
+def test_three_503s_give_up_with_the_status_in_the_reason(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+) -> None:
+    calls = _flaky(monkeypatch, [_status_error(503)] * 3)
+    with pytest.raises(bvg_lookup.StopLookupError, match="HTTP 503"):
+        asyncio.run(bvg_lookup.find_stop("Lichtenberg", "S7"))
+    assert len(calls) == 3  # one try + two retries, no more
+
+
+def test_a_404_is_not_retried(monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]) -> None:
+    calls = _flaky(monkeypatch, [_status_error(404)])
+    with pytest.raises(bvg_lookup.StopLookupError):
+        asyncio.run(bvg_lookup.find_stop("Lichtenberg", "S7"))
+    assert len(calls) == 1 and no_sleep == []
+
+
+def test_a_resolved_stop_never_needs_the_network_again(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+) -> None:
+    calls = _flaky(monkeypatch, [])
+    first = asyncio.run(bvg_lookup.find_stop("Lichtenberg", "S7"))
+    assert first is not None and len(calls) == 1
+    # BVG goes down; the same stop (any spacing or case) still resolves, from disk.
+    _flaky(monkeypatch, [_status_error(503)] * 9)
+    again = asyncio.run(bvg_lookup.find_stop("  lichtenberg ", "s7"))
+    assert again == first
+    cached = json.loads(bvg_lookup.cache_path().read_text())
+    assert cached == {
+        "lichtenberg|S7": {"id": "900160004", "lines": list(first.lines),
+                           "name": "S+U Lichtenberg Bhf (Berlin)"},
+    }  # fmt: skip
+
+
+def test_not_found_is_not_cached(bvg: list[dict[str, str]]) -> None:
+    assert asyncio.run(bvg_lookup.find_stop("Lichtenberg", "S1")) is None
+    assert asyncio.run(bvg_lookup.find_stop("Lichtenberg", "S1")) is None
+    assert len(bvg) == 2
+
+
+def test_a_corrupt_cache_is_ignored(bvg: list[dict[str, str]]) -> None:
+    bvg_lookup.cache_path().write_text('{"lichtenberg|S7": {"id": "x; rm -rf /"}}')
+    stop = asyncio.run(bvg_lookup.find_stop("Lichtenberg", "S7"))
+    assert stop is not None and stop.id == "900160004"
+    assert len(bvg) == 1

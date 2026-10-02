@@ -36,6 +36,7 @@ def warden_test_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
         db_path = f"{tmp}/warden-test.db"
         monkeypatch.setenv("WARDEN_DB_PATH", db_path)
         monkeypatch.setenv("WARDEN_KEY_PATH", f"{tmp}/warden-test.key")
+        monkeypatch.setenv("WARDEN_STOP_CACHE", f"{tmp}/bvg_stops.json")
         yield db_path
 
 
