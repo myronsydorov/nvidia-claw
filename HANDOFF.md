@@ -14,6 +14,7 @@ _(filled in at the end of the session)_
 | 4 | Last night's list | done (status below); added a daily DB backup timer and a boot unit for restart.sh |
 | 5 | Layer 2 proof on this server | **done**: paired, fingerprints matched, answered in 0.88 s, rules + log + receipt + cooldown all correct, relay ciphertext only; test peer removed, your state byte-identical. Found and fixed: the app had no "I'm OK" button; relay now on the tailnet for the Mac. Security review: no invariant violations; 3 small fixes applied |
 | 6 | Anna on the Mac | **done**: `docs/ANNA_SETUP.md` + `scripts/anna-setup.sh` (setup/start/token/proof/stop), rehearsed here with a throwaway HOME. Not run on a real Mac (needs you) |
+| 7 | Alert path | **done**: the app had no alert card and never asked "did it happen?"; both built, then proven end to end with a real sandbox on a separate TEST Warden, which was then removed |
 
 ### 1. The 08:17 stop lookup failure: BVG's public API was down
 Warden log (journal, UTC; 08:17 Berlin = 06:17 UTC). Three hand-overs, each one BVG lookup, each `503`:
@@ -98,6 +99,31 @@ A clearly labelled **test Warden "TEST-Anna"** ran on `127.0.0.1:8010` with its 
 - **The app had no way to say "I'm OK".** `/api/me/check-in`, `/api/me/help` and `/api/me/signal` existed, but no screen used them. A fresh second machine (< 3 days of activity history) therefore honestly answers "Not enough to say", which would sink the video's "Normal day" beat. "What others can ask about me" now opens with **Right now** (what an allowed person would hear) plus **I'm OK** (3 h) and **I need help / I'm fine again** (`c8ff556`, test in `http.test.ts`).
 - **The relay was loopback-only**, so the Mac couldn't reach it. It's now served at `https://ubuntu-s-4vcpu-8gb-fra1.tail081ca8.ts.net/relay` (tailscale serve, **tailnet only**, no Funnel; the public IP still refuses :443). `install-services.sh` does this.
 - **Poller log spam**: 1,793 of the Warden's last 1,964 journal lines were the 2 s mailbox polls, which buried the BVG 503s. Successful polls are no longer logged (`e673e6d`).
+
+### 7. Alert path
+**What was missing:**
+- A `needs_you` worry was only a row with a dot. The detail showed the bare summary, without its evidence.
+- **Nothing in the app called `POST /api/worries/{id}/outcome`**, so "did it happen?" was never asked.
+
+**Built (`app`):**
+- Home leads with **one "Act now" card per alert**: summary, worry, source, when, and up to 3 evidence values.
+- The detail screen shows the alert with an evidence table and **Done, close it**.
+- Closing a worry whose watcher was approved asks once: **"Did what you feared happen?"** Yes or No → `/outcome` → Home.
+- Evidence is watched content, rendered as escaped text only.
+
+**Proof, without touching your Warden:** a separate **TEST-alerts Warden** ran on `127.0.0.1:8020` with its own DB and key, the real compiler and the real OpenShell driver.
+- The test worry: "TEST of the alert path, not a real worry: tell me to act now if … current temperature in Berlin is above -40 degrees."
+- Pipeline: triage → codegen → dry run in a `cwd-*` sandbox → card `GET api.open-meteo.com/v1/forecast` (19 s). **I approved this test card on the TEST Warden only.**
+- 10 s after approval, sandbox `cw-jeapx1nv` reported `act_now`, "Current temperature in Berlin is 14.0°C, above -40°C.", with evidence `{"temperature_c": 14.0}`. **Exactly one `act_now` event.**
+- In the app (390×844, Playwright against the TEST Warden): Home showed 1 alert card → the detail showed the evidence → Done, close it → "Did what you feared happen?" → Yes → back on Home, "All quiet.". `fear_came_true=true` was stored. **Console errors: none.**
+- Screenshots: `~/custody-evidence/alert-path/*.png` (outside the repo).
+
+**Removed afterwards:**
+- Let-go retired the watcher and deleted its sandbox: `openshell sandbox list` = custody-brain, cw-76epww8s, cw-gnnrrs3z, cw-zzrsdcze (yours).
+- The TEST Warden and its Vite server were stopped, and its data dir deleted.
+- Your `/api/ledger` is unchanged.
+
+**Seen on the way, fixed in block 9:** the fear line lowercased the first letter ("The fear: open-Meteo…", the same bug as "s-Bahn").
 
 ---
 
