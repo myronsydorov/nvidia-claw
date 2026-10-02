@@ -12,6 +12,7 @@ _(filled in at the end of the session)_
 | 2 | Transit defaults | **done**: direction of travel + cancelled or ≥ 10 min, enforced; deployed; image rebuilt |
 | 3 | Test health | **done**: 616 Python + 87 app + e2e 2 + e2e:mock 14 all pass; "577" explained (nothing lost); events tests made event-driven; an L2 race fixed; **CI was red on every push (pnpm version) and is now green** |
 | 4 | Last night's list | done (status below); added a daily DB backup timer and a boot unit for restart.sh |
+| 5 | Layer 2 proof on this server | **done**: paired, fingerprints matched, answered in 0.88 s, rules + log + receipt + cooldown all correct, relay ciphertext only; test peer removed, your state byte-identical. Found and fixed: the app had no "I'm OK" button; relay now on the tailnet for the Mac. Security review running |
 
 ### 1. The 08:17 stop lookup failure: BVG's public API was down
 Warden log (journal, UTC; 08:17 Berlin = 06:17 UTC). Three hand-overs, each one BVG lookup, each `503`:
@@ -74,6 +75,28 @@ I found no written list in the repo or the session log, so this is from the evid
 | Services enabled at boot | **done** (was partly). `systemctl --user is-enabled`: custody-relay, custody-warden, custody-app, custody-ufw-brain.timer, nemoclaw-openshell-gateway = enabled; system docker and tailscaled = enabled; Linger=yes. The brain sandbox and gateway-token refresh only came back via a manual `restart.sh`; the new **`custody-boot.service`** (enabled) runs it at boot. Started under systemd just now → `HEALTHY in 30s`, Result=success. **No reboot was run.** |
 | Database backup | **done** (was partly: two manual snapshots). **`custody-backup.timer`** (daily + 10 min after boot) → `~/.local/share/custody/backups/{warden,relay}-<UTC>.db`, online backup + integrity check, keeps 14. First run 06:55 UTC ✓. Manual snapshots: `warden.db.bak-20261002-s7`, `warden.db.bak-20261002-0835`. |
 | README | **partly**: pitch and the ADR-0003 limit are there; the quickstart says "Filled in by task T-21" (→ block 11) |
+
+### 5. Layer 2 proof on this server (06:56–07:08 UTC)
+A clearly labelled **test Warden "TEST-Anna"** ran on `127.0.0.1:8010` with its own data dir (scratchpad, `CUSTODY_SANDBOX=mock`, compiler and scheduler off, `CUSTODY_ACTIVITY=off`), the same relay, and its own key and token. **Your** Warden named it "TEST Anna (L2 proof, remove)". DB backups were taken first (`backups/*-20261002-065637.db`).
+
+| Step | Evidence |
+|---|---|
+| Pairing code | real `POST /api/pairing` → `HSNXYQ1Y`; TEST-Anna `POST /api/pairing/join` → 200; real `GET /api/pairing/{id}` → `paired` after **2.4 s** |
+| Fingerprints | **`8013 1826` on both sides**; both `POST …/confirm` → 204 |
+| Sharing rules | TEST-Anna's rule for Myron: `active:false` before confirm → `active:true` after |
+| Signal | headless, no history → `unknown/not_enough_data`; after `POST /api/me/check-in` → `normal/active_as_usual` |
+| **"Is Anna OK?"** | `{"level":"normal","reason":"active_as_usual"}` in **0.88 s** |
+| Privacy receipt | `{"bytes_sent":316,"fields_shared":["level","reason","ts"],"location_shared":false,"egress_log_ref":"relay:4"}`. 316 = the POST body exactly (base64 of the 184-byte ciphertext = 248 chars, plus 36 bytes of JSON and a 32-char key id) |
+| Cooldown | 2nd ask at once → **429** "asked less than the cooldown ago"; `last_asked_at` not restamped by the 429; the next ask at 07:07:20 (10 min + 3 s) → 200 |
+| Rules withhold | TEST-Anna turned sharing off → the ask got `unknown/not_enough_data`, **same 316 bytes**, still written to her question log |
+| Question log (TEST-Anna) | `ok → normal` 06:57:18, `ok → unknown` 07:07:21 |
+| **Relay = ciphertext only** | 6 rows (offer, sealed accept, 2× query, 2× answer). Columns `id, recipient, sender, ciphertext, ts`, with key ids only. Entropy 6.5–7.1 bits/byte on 140–245-byte blobs. **No** names, code, vocabulary words or public keys (raw, b64 or hex) in any row or in the raw DB file + WAL |
+| Cleanup | `DELETE /api/people/…` on both sides (204), TEST-Anna stopped, its data dir deleted. Your `/api/people`, `/api/ledger`, `/api/sharing-rules` are **byte-identical** to before. One completed pairing row (no key) stays ≤ 1 h by design and is pruned automatically; it's invisible in the app and ledger. The relay's 6 ciphertexts expire in 24 h |
+
+**What broke, fixed:**
+- **The app had no way to say "I'm OK".** `/api/me/check-in`, `/api/me/help` and `/api/me/signal` existed, but no screen used them. A fresh second machine (< 3 days of activity history) therefore honestly answers "Not enough to say", which would sink the video's "Normal day" beat. "What others can ask about me" now opens with **Right now** (what an allowed person would hear) plus **I'm OK** (3 h) and **I need help / I'm fine again** (`c8ff556`, test in `http.test.ts`).
+- **The relay was loopback-only**, so the Mac couldn't reach it. It's now served at `https://ubuntu-s-4vcpu-8gb-fra1.tail081ca8.ts.net/relay` (tailscale serve, **tailnet only**, no Funnel; the public IP still refuses :443). `install-services.sh` does this.
+- **Poller log spam**: 1,793 of the Warden's last 1,964 journal lines were the 2 s mailbox polls, which buried the BVG 503s. Successful polls are no longer logged (`e673e6d`).
 
 ---
 
