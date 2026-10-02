@@ -171,3 +171,27 @@ def test_hand_over_is_capped_per_hour(client: TestClient) -> None:
         assert not call(client, "hand_over", text=f"worry number {i}")[0]
     is_error, message = call(client, "hand_over", text="one more")
     assert is_error and "pause" in message
+
+
+def test_test_worries_are_flagged_for_the_brain(
+    client: TestClient, warden_test_environment: str
+) -> None:
+    _seed_watched(warden_test_environment)
+    test_id = "w_01K6B8Z3Q4R5S6T7V8W9XA0003"
+    seed_worry(
+        warden_test_environment,
+        {
+            "id": test_id, "text": "TEST calendar", "type": "checkable", "fear": "f",
+            "deadline": None, "status": "watching", "watcher_id": None, "resolution": None,
+            "fear_came_true": None,
+            "created_at": "2026-09-29T08:00:00Z", "updated_at": "2026-09-29T08:00:00Z",
+        },
+        timeline=[{"at": "2026-09-29T09:00:00Z", "kind": "test", "text": "a test"}],
+    )  # fmt: skip
+    result = rpc(client, "tools/call", {"name": "list", "arguments": {}}).json()["result"]
+    listed = [json.loads(c["text"]) for c in result["content"]]  # one content item per worry
+    assert {w["worry"]["id"]: w["worry"]["test"] for w in listed} == {
+        WORRY_ID: False, test_id: True,
+    }  # fmt: skip
+    assert call(client, "get", id=test_id)[1]["worry"]["test"] is True
+    assert call(client, "get", id=WORRY_ID)[1]["worry"]["test"] is False

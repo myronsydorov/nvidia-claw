@@ -52,7 +52,9 @@ type:
 - "deadline": like checkable, but it matters by a specific time.
 - "person": about how someone the user cares about is doing (safe, OK, home yet).
 - "social": about what other people think or feel (a friend annoyed, a boss's opinion).
-- "uncontrollable": nothing observable would settle it (the economy, getting ill someday).
+- "uncontrollable": nothing observable would settle it (the economy, getting ill someday),
+  including how a judgement by others will turn out (winning a challenge or a prize, getting
+  a job, passing an exam) when no link or results page is given.
 
 route: "watch" for checkable/deadline, "person" for person, "park" for social/uncontrollable.
 If a checkable worry lacks what a watcher would need, still route "watch": a builder decides.
