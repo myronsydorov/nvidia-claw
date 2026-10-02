@@ -7,15 +7,21 @@ setup:
 	pnpm -C app install
 
 # Without NVIDIA_API_KEY in .env, the compiler replays recorded model answers (mock sandboxes only).
+WARDEN_PORT ?= 8000
+APP_PORT ?= 5173
+
 dev:
+	@scripts/dev-env.sh
 	@trap 'kill 0' EXIT; \
-	set -a; [ -f .env ] && . ./.env; set +a; \
+	set -a; . ./.env; set +a; \
 	if [ -z "$$NVIDIA_API_KEY" ]; then \
 		echo "NVIDIA_API_KEY not set: replaying recorded model answers"; \
 		export CUSTODY_LLM_REPLAY=warden/tests/fixtures/llm/replay.json; \
 	fi; \
-	CUSTODY_SANDBOX=mock uv run --package warden uvicorn warden.app:app --reload --port 8000 & \
-	pnpm -C app dev & \
+	CUSTODY_SANDBOX=mock uv run --package warden uvicorn warden.app:app --reload \
+		--host 127.0.0.1 --port $(WARDEN_PORT) & \
+	WARDEN_URL=http://127.0.0.1:$(WARDEN_PORT) pnpm -C app dev --host 127.0.0.1 \
+		--port $(APP_PORT) --strictPort & \
 	wait
 
 # The L2 relay mailbox (ciphertext only). Point each Warden's RELAY_URL at it.
