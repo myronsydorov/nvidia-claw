@@ -2,7 +2,7 @@
 
 ## ⚑ Friday 2 Oct, unattended session (08:26–10:00 Berlin): summary
 
-**Done:** all 12 blocks. Everything is deployed, `restart.sh` → HEALTHY, CI is green, and the security review found no invariant violations.
+**Done:** all 12 blocks. Everything is deployed, `restart.sh` → HEALTHY, and CI is green. Two security-reviewer passes (5ea5dd3..986a022 and 986a022..HEAD) found no invariant violations; all 6 small findings are fixed.
 - 621 Python and 93 app tests, `make e2e` 2, `e2e:mock` 14, all passing.
 
 **Failed, or not possible from here, and why:**
