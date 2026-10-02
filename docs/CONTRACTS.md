@@ -184,7 +184,7 @@ HTTP, stateless, JSON responses), with tools `hand_over`, `list`, `get`, `let_go
 `WARDEN_MCP_TOKEN`, which must differ from the device token (`/mcp/` answers `401` without it).
 Host headers outside loopback and `WARDEN_MCP_ALLOWED_HOSTS` get `421`. Each tool dispatches
 in-process to the matching `/api` route, and ids must match `w_<ulid>` / `p_<ulid>` exactly.
-Output: Worry fields plus `test` (bool: a worry marked as a system test, CONTRACTS §5; the brain never counts it or presents it as the person's) plus the watcher's `adapters`, `permissions` (PermissionLine list), `state`,
+Output: Worry fields plus `test` (bool: a worry marked as a system test, CONTRACTS §5; `list` leaves test worries out, `get` flags them) plus the watcher's `adapters`, `permissions` (PermissionLine list), `state`,
 `interval_s` and `last_result`. `last_result` passes through `guard.guard_watch_result`
 (`evidence.data` dropped). Timeline texts and `resolution` are wrapped as `<untrusted_data>`.
 Watcher `code` and `policy_yaml` are never returned. Two read-only exceptions to "dispatches to an /api route": `today` and the `test` flag in `list` read the Warden's store directly (counts, ids and event kinds only).

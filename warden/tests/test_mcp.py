@@ -190,8 +190,6 @@ def test_test_worries_are_flagged_for_the_brain(
     )  # fmt: skip
     result = rpc(client, "tools/call", {"name": "list", "arguments": {}}).json()["result"]
     listed = [json.loads(c["text"]) for c in result["content"]]  # one content item per worry
-    assert {w["worry"]["id"]: w["worry"]["test"] for w in listed} == {
-        WORRY_ID: False, test_id: True,
-    }  # fmt: skip
+    assert {w["worry"]["id"]: w["worry"]["test"] for w in listed} == {WORRY_ID: False}
     assert call(client, "get", id=test_id)[1]["worry"]["test"] is True
     assert call(client, "get", id=WORRY_ID)[1]["worry"]["test"] is False

@@ -170,10 +170,12 @@ def build_server(app: FastAPI) -> MCPServer:
         response = await api.call("GET", "/api/worries", params=params)
         response.raise_for_status()
         tests = await test_ids()
+        # Test worries aren't the person's: left out, so the brain can't present them as theirs.
         return [
-            {"worry": {**_guard_worry(item["worry"]), "test": item["worry"]["id"] in tests},
+            {"worry": {**_guard_worry(item["worry"]), "test": False},
              "last_result": _guard_result(item.get("last_result"))}
             for item in response.json()
+            if item["worry"]["id"] not in tests
         ]  # fmt: skip
 
     @server.tool(name="get")

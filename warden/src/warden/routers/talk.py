@@ -29,7 +29,8 @@ from warden.state import get_store
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-TALK_SESSION = "custody-talk"  # + the local date: one brain session per day, not forever
+TALK_SESSION = "custody-talk"  # + the local date and this Warden's start: never one forever
+_STARTED = datetime.now(UTC).strftime("%H%M%S")
 CLOSE_MIN_GAP_S = 600
 
 
@@ -63,7 +64,7 @@ async def talk(body: TalkRequest, request: Request) -> TalkReply:
         raise HTTPException(429, "One moment: let's take this slowly.")
     limiter.busy = True
     try:
-        session = f"{TALK_SESSION}-{datetime.now(local_tz()).date().isoformat()}"
+        session = f"{TALK_SESSION}-{datetime.now(local_tz()).date().isoformat()}-{_STARTED}"
         reply = await brain.chat(session, TALK_SYSTEM, text)
     except BrainUnavailable as exc:
         log.warning("talk: brain unavailable", extra={"error": str(exc)})
