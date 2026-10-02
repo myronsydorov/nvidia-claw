@@ -1,0 +1,10 @@
+[Unit]
+Description=Custody: daily database snapshot (and once shortly after boot)
+
+[Timer]
+OnBootSec=10min
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

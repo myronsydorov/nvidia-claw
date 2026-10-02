@@ -48,7 +48,8 @@ echo "== systemd user units"
 cp deploy/systemd/custody-*.service deploy/systemd/custody-*.timer "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
 systemctl --user enable custody-relay custody-warden custody-app >/dev/null 2>&1
-systemctl --user enable --now custody-ufw-brain.timer >/dev/null 2>&1
+systemctl --user enable --now custody-ufw-brain.timer custody-backup.timer >/dev/null 2>&1
+systemctl --user enable custody-boot.service >/dev/null 2>&1  # runs restart.sh at boot
 systemctl --user restart custody-relay custody-app
 systemctl --user restart custody-warden
 # Start at boot without a login session (NemoClaw's gateway unit needs this too).

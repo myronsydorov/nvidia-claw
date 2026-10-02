@@ -1,0 +1,6 @@
+[Unit]
+Description=Custody: snapshot the Warden and relay SQLite databases (keeps 14)
+
+[Service]
+Type=oneshot
+ExecStart=%h/nvidia-claw/scripts/backup-db.sh

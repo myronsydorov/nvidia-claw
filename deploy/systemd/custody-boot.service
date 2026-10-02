@@ -1,0 +1,13 @@
+[Unit]
+Description=Custody: bring everything back after a boot (brain sandbox, gateway token, checks)
+After=custody-warden.service nemoclaw-openshell-gateway.service
+Wants=custody-warden.service
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/nvidia-claw/scripts/restart.sh
+TimeoutStartSec=420
+
+[Install]
+WantedBy=default.target

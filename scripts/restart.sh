@@ -35,7 +35,7 @@ warden_ok() {
 }
 
 say "== docker"
-systemctl is-active --quiet docker || sudo systemctl start docker
+systemctl is-active --quiet docker || sudo -n systemctl start docker 2>/dev/null || true  # at boot: no tty; docker is enabled anyway
 wait_for 60 "docker daemon" docker info
 
 say "== OpenShell gateway (nemoclaw-openshell-gateway.service)"
