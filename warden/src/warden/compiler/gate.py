@@ -35,6 +35,8 @@ HARNESS_API = frozenset(
     {"emit", "fail", "now", "parse_time", "hours_until", "load_state", "save_state"}
 )
 ADAPTER_API = frozenset({"fetch", "parse"})
+# Pure helpers some adapters add on top of fetch/parse.
+ADAPTER_EXTRA_API = {"transit_bvg": frozenset({"disruptions", "DEFAULT_MIN_DELAY_MIN"})}
 # Methods of the plain values adapters return (dict/list/str) and of datetimes.
 VALUE_ATTRIBUTES = frozenset(
     {
@@ -184,8 +186,9 @@ class _Visitor(ast.NodeVisitor):
         if dotted == "watcher_runtime.harness":
             return HARNESS_API
         prefix = "watcher_runtime.adapters."
-        if dotted.startswith(prefix) and dotted[len(prefix) :] in self.adapters:
-            return ADAPTER_API
+        name = dotted[len(prefix) :]
+        if dotted.startswith(prefix) and name in self.adapters:
+            return ADAPTER_API | ADAPTER_EXTRA_API.get(name, frozenset())
         return None
 
     def visit_Module(self, node: ast.Module) -> None:

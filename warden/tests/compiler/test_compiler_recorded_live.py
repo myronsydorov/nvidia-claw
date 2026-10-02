@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import yaml
 from warden.compiler import gate
-from warden.compiler.codegen import build
+from warden.compiler.codegen import CodegenError, build
 from warden.compiler.triage import parse_triage
 
 ROOT = Path(__file__).parent.parent
@@ -38,7 +38,11 @@ def test_recorded_triage_routes_as_labelled(case_id: str) -> None:
     assert parse_triage(triages[-1]).route == CASES[case_id]["route"]
 
 
-@pytest.mark.parametrize("case_id", [i for i in IDS if CASES[i]["route"] == "watch"])
+# `train` was recorded before the transit default (2026-10-02): its watcher alerts on any S1
+# cancellation in either direction, so it is now sent back for a retry (see below).
+@pytest.mark.parametrize(
+    "case_id", [i for i in IDS if CASES[i]["route"] == "watch" and i != "train"]
+)
 def test_recorded_watcher_builds_and_passes_the_gate(case_id: str) -> None:
     record = load(case_id)
     answers = [a["content"] for a in record["answers"] if a["stage"] == "codegen"]
@@ -58,6 +62,15 @@ def test_school_calendar_declares_the_canonical_ics_path() -> None:
         built = build(answer, record["text"])  # every attempt now builds …
         paths = [e.path for a in built.adapters for e in a.endpoints]
         assert paths == [canonical]  # … with the one canonical path
-        gate.check(built.code, [a.name for a in built.adapters], [
-            e for a in built.adapters for e in a.endpoints
-        ])
+        gate.check(
+            built.code,
+            [a.name for a in built.adapters],
+            [e for a in built.adapters for e in a.endpoints],
+        )
+
+
+def test_recorded_train_answer_predates_the_transit_default_and_is_sent_back() -> None:
+    record = load("train")
+    answer = [a["content"] for a in record["answers"] if a["stage"] == "codegen"][-1]
+    with pytest.raises(CodegenError, match="transit_bvg.disruptions"):
+        build(answer, record["text"])

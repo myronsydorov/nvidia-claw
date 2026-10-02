@@ -7,6 +7,7 @@ resolved through the adapter registry, so the adapters' own validation applies
 never the model's, and adapters may not name secrets beyond their fixed ones.
 """
 
+import ast
 import json
 import re
 from dataclasses import dataclass
@@ -69,6 +70,15 @@ Adapters (from watcher_runtime.adapters import <name>); each has fetch(...) and 
       Write STOP_ID = "BVG_STOP_ID" exactly; the Warden puts in the real stop id. Without
       `when` you get the next few minutes only; to cover a later trip pass when=<ISO UTC time
       to start from> and duration_min=<1..180>. Times are ISO strings with an offset.
+  transit_bvg.disruptions(data, line: str, toward: str | None = None, min_delay_min=10)
+      -> {"matched": int, "disrupted": [{"line", "direction", "planned_when", "delay_min",
+      "cancelled"}]}. Always judge departures with this. Defaults, unless the worry says
+      otherwise: only the person's direction of travel (toward = the end station shown on
+      the board for their direction, e.g. "Potsdam Hbf" for an S7 from Lichtenberg to Potsdam),
+      and only cancellations or delays of 10 minutes or more (keep min_delay_min=10 unless
+      the worry names another number). "matched" == 0 means the board had no such
+      departures to judge (wrong direction name, or no trains in the window): call
+      harness.fail, never "act_now" and never a silent "ok".
   weather_openmeteo.fetch(latitude: float, longitude: float) -> {"hourly": [{"time" (ISO,
       Berlin time with offset), "precipitation_mm", "precipitation_probability" (0-100),
       "weather_code"}] (next 48 hours), "current": {"time", "temperature_c",
@@ -236,6 +246,47 @@ def parse_answer(content: str) -> tuple[Plan, str]:
     return plan, blocks["python"]
 
 
+TRANSIT_DEFAULT_MIN_DELAY = 10
+
+
+def _check_transit_defaults(plan: Plan, code: str, worry_text: str) -> None:
+    """Transit default (2026-10-02): only the direction of travel, only cancellations or delays
+    of 10+ minutes, unless the worry says otherwise. Last night's S7 watcher alerted on any
+    delay over 1 minute in either direction. Judging goes through transit_bvg.disruptions."""
+    if not any(item.name == "transit_bvg" for item in plan.adapters):
+        return
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return  # the gate reports it
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "disruptions"
+    ]
+    if not calls:
+        raise CodegenError(
+            "judge the departures with transit_bvg.disruptions(data, line, toward=<the end "
+            "station of the person's direction>) - defaults: their direction only, and only "
+            "cancellations or delays of 10 minutes or more"
+        )
+    numbers = {int(n) for n in re.findall(r"\d+", worry_text)}
+    for call in calls:
+        for kw in call.keywords:
+            if kw.arg != "min_delay_min":
+                continue
+            value = kw.value
+            if not (isinstance(value, ast.Constant) and isinstance(value.value, int)):
+                raise CodegenError("min_delay_min must be a whole number literal")
+            if value.value < TRANSIT_DEFAULT_MIN_DELAY and value.value not in numbers:
+                raise CodegenError(
+                    f"keep min_delay_min={TRANSIT_DEFAULT_MIN_DELAY}: the worry names no "
+                    "smaller delay"
+                )
+
+
 def _check_inputs_given(plan: Plan, worry_text: str) -> None:
     """Every URL in the plan must come from the worry itself; an invented one means it's missing."""
     for item in plan.adapters:
@@ -344,6 +395,7 @@ def build(
     code = _pin_stops(plan, code, worry_text, stop_ids or {})
     _check_inputs_given(plan, worry_text)
     adapters = resolve(plan)
+    _check_transit_defaults(plan, code, worry_text)
     interval = min(max(plan.interval_s, MIN_INTERVAL_S), MAX_INTERVAL_S)
     return Generated(adapters=adapters, code=code, interval_s=interval)
 

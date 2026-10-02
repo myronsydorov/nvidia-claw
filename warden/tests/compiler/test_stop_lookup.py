@@ -42,6 +42,7 @@ def answer(params: dict[str, str], stop_literal: str) -> str:
         "from watcher_runtime.adapters import transit_bvg\n"
         f'STOP_ID = "{stop_literal}"\n'
         'data = transit_bvg.fetch(STOP_ID, when="2026-10-02T06:30:00+00:00", duration_min=60)\n'
+        'found = transit_bvg.disruptions(data, "S7", toward="Potsdam Hbf")\n'
         'harness.emit("ok", "S7 looks normal.", "BVG")\n'
     )
     return f"```json\n{plan}\n```\n```python\n{code}```"
@@ -200,3 +201,15 @@ def test_a_corrupt_cache_is_ignored(bvg: list[dict[str, str]]) -> None:
     stop = asyncio.run(bvg_lookup.find_stop("Lichtenberg", "S7"))
     assert stop is not None and stop.id == "900160004"
     assert len(bvg) == 1
+
+
+def test_a_cached_stop_also_answers_a_query_without_a_line(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+) -> None:
+    _flaky(monkeypatch, [])
+    first = asyncio.run(bvg_lookup.find_stop("Lichtenberg", "S7"))
+    calls = _flaky(monkeypatch, [_status_error(503)] * 9)
+    assert asyncio.run(bvg_lookup.find_stop("Lichtenberg")) == first
+    assert calls == []
+    with pytest.raises(bvg_lookup.StopLookupError):  # a different line is a different question
+        asyncio.run(bvg_lookup.find_stop("Lichtenberg", "U5"))

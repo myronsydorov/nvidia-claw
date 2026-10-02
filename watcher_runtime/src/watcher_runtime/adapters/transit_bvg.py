@@ -47,3 +47,53 @@ def parse(raw: dict[str, Any]) -> dict[str, Any]:
             }
         )
     return {"departures": departures}
+
+
+# The default a transit worry gets unless it says otherwise (2026-10-02): last night's S7
+# watcher would have alerted on any delay over 1 minute, in either direction. That is noise.
+DEFAULT_MIN_DELAY_MIN = 10
+
+
+def _place(name: str) -> str:
+    """'S Potsdam Hauptbahnhof' and 'Potsdam Hbf' compare equal; so do 'S+U' prefixes."""
+    words = name.casefold().replace("(berlin)", " ").replace("+", " ").replace("-", " ").split()
+    short = {"hauptbahnhof": "hbf", "bahnhof": "bhf", "bf": "bhf", "str.": "str", "straße": "str"}
+    words = [short.get(w, w) for w in words if w not in {"s", "u"}]
+    return " ".join(words)
+
+
+def disruptions(
+    data: dict[str, Any],
+    line: str,
+    toward: str | None = None,
+    min_delay_min: int = DEFAULT_MIN_DELAY_MIN,
+) -> dict[str, Any]:
+    """Departures of `line` heading `toward` that are cancelled or at least `min_delay_min`
+    minutes late. `toward` is the direction shown on the board (the line's end station, e.g.
+    "Potsdam Hbf"); None means both directions. Returns {"matched": n, "disrupted": [...]}:
+    `matched` = departures of that line and direction, so 0 means the board had none to judge
+    (a wrong direction name, or no trains in the window), which is not the same as "all fine".
+    """
+    want_line = line.strip().upper()
+    want_dir = _place(toward) if toward else ""
+    threshold_s = max(1, int(min_delay_min)) * 60
+    matched = 0
+    disrupted: list[dict[str, Any]] = []
+    for dep in data.get("departures", []):
+        if str(dep.get("line") or "").upper() != want_line:
+            continue
+        direction = _place(str(dep.get("direction") or ""))
+        if want_dir and want_dir not in direction and direction not in want_dir:
+            continue
+        matched += 1
+        if dep.get("cancelled") or int(dep.get("delay_s") or 0) >= threshold_s:
+            disrupted.append(
+                {
+                    "line": dep.get("line"),
+                    "direction": dep.get("direction"),
+                    "planned_when": dep.get("planned_when"),
+                    "delay_min": int(dep.get("delay_s") or 0) // 60,
+                    "cancelled": bool(dep.get("cancelled")),
+                }
+            )
+    return {"matched": matched, "disrupted": disrupted}

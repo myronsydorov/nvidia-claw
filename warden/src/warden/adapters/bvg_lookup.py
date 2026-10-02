@@ -99,7 +99,12 @@ def _cache_read() -> dict[str, dict[str, Any]]:
 
 
 def _cached(query: str, line: str | None) -> "Stop | None":
-    entry = _cache_read().get(_cache_key(query, line))
+    cache = _cache_read()
+    entry = cache.get(_cache_key(query, line))
+    if entry is None and line is None:
+        # No line asked for: a stop found for the same name with any line is still that stop.
+        prefix = _cache_key(query, None)
+        entry = next((v for k, v in sorted(cache.items()) if k.startswith(prefix)), None)
     if not isinstance(entry, dict):
         return None
     stop_id, name, lines = entry.get("id"), entry.get("name"), entry.get("lines")
@@ -158,7 +163,11 @@ async def find_stop(query: str, line: str | None = None) -> Stop | None:
         if not _STOP_ID.fullmatch(stop_id):
             continue
         lines = tuple(
-            str(entry.get("name")) for entry in item.get("lines") or [] if isinstance(entry, dict)
+            dict.fromkeys(
+                str(entry["name"])
+                for entry in item.get("lines") or []
+                if isinstance(entry, dict) and entry.get("name")
+            )
         )
         if line is not None and line.upper() not in {name.upper() for name in lines}:
             continue
