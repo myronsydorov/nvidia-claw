@@ -52,7 +52,14 @@ test("hand over → approve → watching, against a real Warden", async ({
 	expect(detail.worry.status).toBe("watching");
 	expect(detail.watcher.state).toBe("active");
 
-	// Let it go: back home, nothing in custody.
+	// Let it go: it was watched, so it asks once whether the fear came true; then home.
 	await page.getByRole("button", { name: "Let it go" }).click();
+	await expect(page.getByText("Did what you feared happen?")).toBeVisible();
+	await page.getByRole("button", { name: "No, it didn't" }).click();
 	await expect(page.getByText("Nothing in custody.")).toBeVisible();
+	const after = await request.get(
+		`http://127.0.0.1:${WARDEN_PORT}/api/worries/${id}`,
+		{ headers: { Authorization: `Bearer ${E2E_TOKEN}` } },
+	);
+	expect((await after.json()).worry.fear_came_true).toBe(false);
 });

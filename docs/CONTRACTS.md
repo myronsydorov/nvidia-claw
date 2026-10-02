@@ -49,7 +49,7 @@ Invalid JSON or a missing `status` is treated as `error`. Three `error`s in a ro
 | field | type | notes |
 |---|---|---|
 | `at` | datetime | |
-| `kind` | enum `created \| triaged \| compiled \| approval_requested \| approved \| denied \| checked \| act_now \| resolved \| let_go \| retried \| parked \| failed` | |
+| `kind` | enum `created \| triaged \| compiled \| approval_requested \| approved \| denied \| checked \| act_now \| resolved \| let_go \| retried \| parked \| failed \| test` | `test`: appended by `scripts/mark_test_worry.py` to a worry created to test the system; it is then not counted in the ledger |
 | `text` | str | ≤ 140 chars, plain language, shown as-is in the app |
 
 ### WorrySummary (items of `GET /api/worries`)
@@ -188,6 +188,8 @@ Watcher `code` and `policy_yaml` are never returned.
 `{ worries_total, active, never_needed_you, needed_you, median_warning_lead_h, came_true_rate, came_true_by_type{}, watchers_built, sandboxes_live, endpoints_denied, peer_questions_answered, locations_shared: 0 }` (`peer_questions_answered` = entries in my question log)
 
 - **Build failures are not counted** in any total: a worry with a `failed` event that was never `approved` (a watcher paused after errors was approved, so it counts). `watchers_built` counts watchers that passed their dry run.
+- **Test worries are not counted** either: a worry with a `test` timeline event, and its watcher (not in `watchers_built`). Test peers are removed with `DELETE /api/people/{id}`, and a question log entry only exists for questions asked about me.
+- `median_warning_lead_h`, `came_true_by_type` and `endpoints_denied` are **not measured yet** (always `0.0`, `{}`, `0`); the app labels them so and claims nothing from them.
 
 - `came_true_rate`: a fraction from 0 to 1 = `needed_you / (needed_you + never_needed_you)`, i.e. of the closed worries with a known outcome, the share whose fear came true. It is `0.0` while no outcome is known; clients must then check `needed_you + never_needed_you = 0` and claim nothing (the app shows "No outcomes yet"). `came_true_by_type` uses the same unit per worry type.
 - DESIGN §6 also mentions "rules approved" and "bytes that left the friend's device". They are **deliberately not** in this response: the per-answer privacy receipt already shows the bytes, and approvals are visible per worry.

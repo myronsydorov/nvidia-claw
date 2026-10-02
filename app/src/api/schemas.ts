@@ -102,6 +102,7 @@ export const timelineEventSchema = z.object({
 		"retried",
 		"parked",
 		"failed",
+		"test",
 	]),
 	text: z.string().max(140),
 });

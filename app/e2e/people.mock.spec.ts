@@ -116,12 +116,12 @@ for (const scheme of ["dark", "light"] as const) {
 				"needed_you",
 				"watchers_built",
 				"sandboxes_live",
-				"endpoints_denied",
 				"peer_questions_answered",
 				"locations_shared",
 			] as const) {
 				await expect(field(f)).toHaveText(String(l[f]));
 			}
+			await expect(field("endpoints_denied")).toHaveText("—");
 			await expect(field("median_warning_lead_h")).toHaveText("31.5 h");
 			await expect(field("came_true_rate")).toHaveText("10.5%");
 			await expect(

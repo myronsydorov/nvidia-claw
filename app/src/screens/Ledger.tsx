@@ -110,7 +110,7 @@ function Wall({ l }: { l: LedgerResponse }) {
 				<p className="mt-2 text-[17px] text-ink">worries never needed you.</p>
 				<p className="mt-1 text-[15px] leading-relaxed text-muted">
 					<span data-field="needed_you">{l.needed_you}</span> needed you
-					{l.needed_you > 0 ? (
+					{l.needed_you > 0 && l.median_warning_lead_h > 0 ? (
 						<>
 							, warned a median{" "}
 							<span data-field="median_warning_lead_h">
@@ -143,7 +143,7 @@ function Wall({ l }: { l: LedgerResponse }) {
 						<div className="space-y-5">
 							<Meter label="Yours, didn't happen" fraction={mine} mine />
 							<Meter
-								label="Penn State study"
+								label="Research, not your data: Penn State study"
 								fraction={PENN_STATE_DIDNT_COME_TRUE}
 							/>
 						</div>
@@ -152,8 +152,9 @@ function Wall({ l }: { l: LedgerResponse }) {
 							<span data-field="came_true_rate" className="text-muted">
 								{pct(l.came_true_rate)}
 							</span>{" "}
-							of {known} worries with a known outcome. Penn State (LaFreniere
-							&amp; Newman, 2019): 91.4% of worries didn't come true.
+							of your {known} worries with a known outcome. For comparison,
+							research (Penn State, LaFreniere &amp; Newman, 2019, 29 people
+							with anxiety): 91.4% of their worries didn't come true.
 						</p>
 					</>
 				)}
@@ -198,8 +199,8 @@ function Wall({ l }: { l: LedgerResponse }) {
 						wide
 						label="Endpoints denied"
 						field="endpoints_denied"
-						value={l.endpoints_denied}
-						note="Requests outside a watcher's rules, blocked by its sandbox."
+						value="—"
+						note="Not counted here yet. Each sandbox blocks and logs anything outside its rules; the log is real, this tile isn't wired to it."
 					/>
 				</div>
 			</section>
@@ -208,7 +209,7 @@ function Wall({ l }: { l: LedgerResponse }) {
 				<SectionLabel>Between people</SectionLabel>
 				<div className="grid grid-cols-2 gap-3">
 					<Tile
-						label="Questions answered"
+						label="Questions about you"
 						field="peer_questions_answered"
 						value={l.peer_questions_answered}
 					/>

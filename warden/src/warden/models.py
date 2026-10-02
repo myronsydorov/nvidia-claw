@@ -34,6 +34,7 @@ TimelineKind = Literal[
     "retried",
     "parked",
     "failed",
+    "test",
 ]
 
 

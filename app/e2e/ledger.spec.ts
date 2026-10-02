@@ -25,12 +25,13 @@ test("ledger numbers match /api/ledger; people starts empty", async ({
 		"needed_you",
 		"watchers_built",
 		"sandboxes_live",
-		"endpoints_denied",
 		"peer_questions_answered",
 		"locations_shared",
 	]) {
 		await expect(field(f)).toHaveText(String(l[f]));
 	}
+	// Not measured yet (CONTRACTS §5): shown as "—", never as a real-looking 0.
+	await expect(field("endpoints_denied")).toHaveText("—");
 	if (l.needed_you + l.never_needed_you === 0) {
 		// No outcome known yet: no came-true claim, no 91.4% comparison.
 		await expect(
