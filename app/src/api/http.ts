@@ -134,6 +134,13 @@ export function createHttpApi(opts: HttpApiOptions): Api {
 		approve: (id) => post(id, "approve"),
 		deny: (id) => post(id, "deny"),
 		letGo: (id) => post(id, "let-go"),
+		recordOutcome: (id, fearCameTrue) =>
+			request(
+				"POST",
+				`/api/worries/${encodeURIComponent(id)}/outcome`,
+				worryDetailSchema,
+				{ fear_came_true: fearCameTrue },
+			),
 		listPeople: () =>
 			request("GET", "/api/people", peopleListItemSchema.array()),
 		ask: (peerId, q) =>

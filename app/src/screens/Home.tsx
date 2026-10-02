@@ -2,6 +2,7 @@ import { type FormEvent, useState } from "react";
 import { api } from "../api/client";
 import type { WorrySummary } from "../api/schemas";
 import { Orb, Screen, SectionLabel } from "../components/ui";
+import { evidenceRows } from "../lib/evidence";
 import { statusLabel } from "../lib/labels";
 import { href, navigate } from "../lib/router";
 import { ago } from "../lib/time";
@@ -47,6 +48,36 @@ function WorryRow({ item }: { item: WorrySummary }) {
 					</span>
 					<span className="mt-0.5 block text-sm text-faint">{meta}</span>
 				</span>
+			</a>
+		</li>
+	);
+}
+
+/** One card per worry that needs the person now: what the watcher saw, and its evidence. */
+function AlertCard({ item }: { item: WorrySummary }) {
+	const { worry, last_result } = item;
+	const rows = last_result ? evidenceRows(last_result).slice(0, 3) : [];
+	return (
+		<li>
+			<a
+				href={href({ name: "worry", id: worry.id })}
+				data-testid="alert-card"
+				className="block rounded-3xl border border-accent/60 bg-accent-soft p-5 transition-opacity active:opacity-80"
+			>
+				<p className="text-[13px] font-medium tracking-wide text-accent uppercase">
+					Act now
+				</p>
+				<p className="mt-2 text-[18px] leading-snug text-ink">
+					{last_result?.summary ?? worry.text}
+				</p>
+				<p className="mt-1 truncate text-sm text-muted">{worry.text}</p>
+				{last_result && (
+					<p className="mt-3 text-sm text-faint">
+						{last_result.evidence.source} ·{" "}
+						{ago(last_result.evidence.checked_at)}
+						{rows.map((r) => ` · ${r.key}: ${r.value}`).join("")}
+					</p>
+				)}
 			</a>
 		</li>
 	);
@@ -128,9 +159,12 @@ export function Home() {
 		list.state === "ready"
 			? list.data.filter((i) => i.worry.status !== "resolved")
 			: [];
-	const needsYou = items.some((i) => i.worry.status === "needs_you");
+	const alerts = items.filter((i) => i.worry.status === "needs_you");
+	const needsYou = alerts.length > 0;
 	const parked = items.filter((i) => i.worry.status === "parked");
-	const held = items.filter((i) => i.worry.status !== "parked");
+	const held = items.filter(
+		(i) => i.worry.status !== "parked" && i.worry.status !== "needs_you",
+	);
 
 	return (
 		<Screen flushBottom>
@@ -162,6 +196,15 @@ export function Home() {
 				</p>
 			</header>
 
+			{needsYou && (
+				<section className="mb-8 animate-rise" aria-label="Needs you">
+					<ul className="space-y-3">
+						{alerts.map((item) => (
+							<AlertCard key={item.worry.id} item={item} />
+						))}
+					</ul>
+				</section>
+			)}
 			<WorryGroup label="In custody" items={held} />
 			<WorryGroup label="For worry time" items={parked} />
 

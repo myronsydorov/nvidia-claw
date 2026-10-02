@@ -53,6 +53,8 @@ export interface Api {
 	approve(id: string): Promise<WorryDetail>;
 	deny(id: string): Promise<WorryDetail>;
 	letGo(id: string): Promise<WorryDetail>;
+	/** "Did what you feared happen?", asked once a worry is closed. */
+	recordOutcome(id: string, fearCameTrue: boolean): Promise<WorryDetail>;
 	/** Paired people and their last answer (GET /api/people). */
 	listPeople(): Promise<PeopleListItem[]>;
 	/** Ask a paired person's Warden a fixed-vocabulary question. Rejects with an
@@ -217,6 +219,16 @@ export function createMockApi(latencyMs = 250): Api {
 				d.worry.resolution = "You let it go.";
 				if (d.watcher) d.watcher.state = "retired";
 				d.timeline.push({ at: now, kind: "let_go", text: "You let it go." });
+				return d;
+			});
+		},
+		async recordOutcome(id, fearCameTrue) {
+			await wait(latencyMs);
+			if (get(id).worry.status !== "resolved")
+				throw new ApiError(409, "worry is not resolved yet");
+			return update(id, (d) => {
+				d.worry.fear_came_true = fearCameTrue;
+				d.worry.updated_at = iso(0);
 				return d;
 			});
 		},

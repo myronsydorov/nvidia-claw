@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { WorryDetail as Detail } from "../api/schemas";
 import { PermissionCard } from "../components/PermissionCard";
 import { BackLink, Button, Screen, SectionLabel } from "../components/ui";
+import { asksOutcome, evidenceRows } from "../lib/evidence";
 import { adapterLabel, statusLabel } from "../lib/labels";
 import { navigate } from "../lib/router";
 import { ago, day, every } from "../lib/time";
@@ -29,13 +30,26 @@ function Body({ initial }: { initial: Detail }) {
 		setFailed(false);
 		try {
 			const next = await op(worry.id);
-			if (home) return navigate({ name: "home" });
+			// Closing a worry that was watched asks once whether the fear came true.
+			if (home && !asksOutcome(next)) return navigate({ name: "home" });
 			setDetail(next);
 		} catch {
 			setFailed(true);
 		}
 		setBusy(false);
 	};
+	const answer = async (cameTrue: boolean) => {
+		setBusy(true);
+		setFailed(false);
+		try {
+			await api.recordOutcome(worry.id, cameTrue);
+			return navigate({ name: "home" });
+		} catch {
+			setFailed(true);
+		}
+		setBusy(false);
+	};
+	const alert = worry.status === "needs_you" && last?.status === "act_now";
 
 	return (
 		<>
@@ -70,7 +84,68 @@ function Body({ initial }: { initial: Detail }) {
 				</section>
 			)}
 
-			{last && (
+			{asksOutcome(detail) && (
+				<section
+					className="mt-10 rounded-3xl border border-line bg-surface p-5"
+					aria-label="Did it happen?"
+				>
+					<h2 className="font-display text-[22px] leading-tight font-light">
+						Did what you feared happen?
+					</h2>
+					<p className="mt-2 text-[15px] text-muted">
+						One tap. It's how your ledger learns how often worries come true.
+					</p>
+					<div className="mt-5 flex gap-3">
+						<Button disabled={busy} onClick={() => answer(true)}>
+							Yes, it did
+						</Button>
+						<Button
+							variant="quiet"
+							disabled={busy}
+							onClick={() => answer(false)}
+						>
+							No, it didn't
+						</Button>
+					</div>
+				</section>
+			)}
+
+			{worry.status === "resolved" && worry.fear_came_true !== null && (
+				<p className="mt-8 text-[15px] text-muted">
+					{worry.fear_came_true
+						? "You said it did happen."
+						: "You said it didn't happen."}
+				</p>
+			)}
+
+			{alert && last && (
+				<section
+					className="mt-10 rounded-3xl border border-accent/60 bg-accent-soft p-5"
+					aria-label="Act now"
+				>
+					<p className="text-[13px] font-medium tracking-wide text-accent uppercase">
+						Act now
+					</p>
+					<p className="mt-2 text-[18px] leading-snug text-ink">
+						{last.summary}
+					</p>
+					<p className="mt-1 text-sm text-faint">
+						Seen {ago(last.evidence.checked_at)} · {last.evidence.source}
+					</p>
+					{evidenceRows(last).length > 0 && (
+						<dl className="mt-4 divide-y divide-line border-t border-line">
+							{evidenceRows(last).map((r) => (
+								<div key={r.key} className="flex gap-4 py-2 text-sm">
+									<dt className="w-28 shrink-0 text-faint">{r.key}</dt>
+									<dd className="min-w-0 break-words text-ink">{r.value}</dd>
+								</div>
+							))}
+						</dl>
+					)}
+				</section>
+			)}
+
+			{last && !alert && (
 				<section className="mt-10">
 					<SectionLabel>Last check</SectionLabel>
 					<p className="text-[16px] leading-relaxed text-ink">{last.summary}</p>
@@ -130,11 +205,11 @@ function Body({ initial }: { initial: Detail }) {
 						</Button>
 					)}
 					<Button
-						variant="quiet"
+						variant={worry.status === "needs_you" ? "primary" : "quiet"}
 						disabled={busy}
 						onClick={() => act(api.letGo, true)}
 					>
-						Let it go
+						{worry.status === "needs_you" ? "Done, close it" : "Let it go"}
 					</Button>
 				</div>
 			)}
