@@ -15,6 +15,7 @@ _(filled in at the end of the session)_
 | 5 | Layer 2 proof on this server | **done**: paired, fingerprints matched, answered in 0.88 s, rules + log + receipt + cooldown all correct, relay ciphertext only; test peer removed, your state byte-identical. Found and fixed: the app had no "I'm OK" button; relay now on the tailnet for the Mac. Security review: no invariant violations; 3 small fixes applied |
 | 6 | Anna on the Mac | **done**: `docs/ANNA_SETUP.md` + `scripts/anna-setup.sh` (setup/start/token/proof/stop), rehearsed here with a throwaway HOME. Not run on a real Mac (needs you) |
 | 7 | Alert path | **done**: the app had no alert card and never asked "did it happen?"; both built, then proven end to end with a real sandbox on a separate TEST Warden, which was then removed |
+| 8 | Ledger truth | **done**: real numbers below; the T-11 test worry is no longer counted; unmeasured tiles are labelled; 91.4% is labelled research |
 
 ### 1. The 08:17 stop lookup failure: BVG's public API was down
 Warden log (journal, UTC; 08:17 Berlin = 06:17 UTC). Three hand-overs, each one BVG lookup, each `503`:
@@ -124,6 +125,32 @@ A clearly labelled **test Warden "TEST-Anna"** ran on `127.0.0.1:8010` with its 
 - Your `/api/ledger` is unchanged.
 
 **Seen on the way, fixed in block 9:** the fear line lowercased the first letter ("The fear: open-Meteo…", the same bug as "s-Bahn").
+
+### 8. Ledger truth: your real numbers (07:34 UTC)
+`GET /api/ledger` = `{"worries_total":5,"active":3,"never_needed_you":0,"needed_you":0,"median_warning_lead_h":0.0,"came_true_rate":0.0,"came_true_by_type":{},"watchers_built":4,"sandboxes_live":3,"endpoints_denied":0,"peer_questions_answered":0,"locations_shared":0}`
+
+| Worry | Status | Counted? |
+|---|---|---|
+| School moves Friday's parents' evening | watching | ✅ |
+| S7 disrupted ~9:00 (the second attempt, denied 06:15 → let go) | resolved, no outcome | ✅ |
+| Rain in Berlin 16:00–19:00 | watching | ✅ |
+| GitHub down this evening | watching | ✅ |
+| "What if I don't win the challenge?" | parked | ✅ |
+| S7 first attempt (night) | parked | ✗ build failure |
+| S7 ×2 at 08:16 / 08:18 (BVG down) | resolved | ✗ build failure |
+| "Lena … T-11 test dinner" | parked | ✗ **test** (marked today) |
+
+- **5 handed over, 3 watched, 0 outcomes known** (so no came-true claim), and 0 questions about you.
+- **4 watchers built**: school, rain, GitHub, and the denied S7 card. Per CONTRACTS, "built" means "passed its dry run", so it doesn't mean "ran". **3 sandboxes live**: `cw-76epww8s`, `cw-gnnrrs3z`, `cw-zzrsdcze`.
+- No test peers: TEST-Anna was removed and the people list is empty. The TEST-alerts Warden had its own DB, so it never touched these numbers.
+- **What changed:**
+  - `test` is a timeline kind now (CONTRACTS §1/§5), and the ledger skips test worries and their watchers.
+  - `scripts/mark_test_worry.py` is append-only and backs up first (`warden.db.bak-20261002-073333-mark-test`). It appended one event to the Lena worry; nothing else changed. `worries_total` went 6 → 5.
+- **Ledger screen vs API:** every tile equals the API (`make e2e` checks it field by field), except where the screen now deliberately says less:
+  - **Endpoints denied** shows "—" and says it isn't wired to the sandbox log yet. It showed a real-looking `0`, while the API returns a constant.
+  - "warned a median 0 min ahead" can no longer appear (the median isn't measured).
+  - The 91.4% bar reads **"Research, not your data: Penn State study"**, and the footnote cites LaFreniere & Newman 2019. It only shows once you have outcomes.
+  - The README hero and the video hook use 91.4%/91% as research with the citation (checked in block 11).
 
 ---
 
