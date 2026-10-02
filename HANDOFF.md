@@ -16,6 +16,7 @@ _(filled in at the end of the session)_
 | 6 | Anna on the Mac | **done**: `docs/ANNA_SETUP.md` + `scripts/anna-setup.sh` (setup/start/token/proof/stop), rehearsed here with a throwaway HOME. Not run on a real Mac (needs you) |
 | 7 | Alert path | **done**: the app had no alert card and never asked "did it happen?"; both built, then proven end to end with a real sandbox on a separate TEST Warden, which was then removed |
 | 8 | Ledger truth | **done**: real numbers below; the T-11 test worry is no longer counted; unmeasured tiles are labelled; 91.4% is labelled research |
+| 9 | App polish | **done** (desktop-verified): status-bar strip, PNG home-screen icons + manifest, names keep capitals, 2 wording fixes; dark + light, no console errors. **Check on the iPhone** (Needs Myron) |
 
 ### 1. The 08:17 stop lookup failure: BVG's public API was down
 Warden log (journal, UTC; 08:17 Berlin = 06:17 UTC). Three hand-overs, each one BVG lookup, each `503`:
@@ -125,6 +126,23 @@ A clearly labelled **test Warden "TEST-Anna"** ran on `127.0.0.1:8010` with its 
 - Your `/api/ledger` is unchanged.
 
 **Seen on the way, fixed in block 9:** the fear line lowercased the first letter ("The fear: open-Meteo…", the same bug as "s-Bahn").
+
+### 9. App polish (phone first)
+- **Status bar:**
+  - With `black-translucent` the page runs under the clock. `pt-[max(env(safe-area-inset-top),1.5rem)]` only protected the first screen, so scrolled content slid under the status bar.
+  - Now a fixed `body::before` strip, `env(safe-area-inset-top)` high and in the page colour, sits on top (z 50, no pointer events), and `html`/`body` are painted with the theme.
+  - **I can't emulate the iPhone notch here, so check it on the phone.**
+- **Home screen:**
+  - `apple-touch-icon` was an SVG, which iOS ignores (it then uses a screenshot), and the manifest had only an SVG icon.
+  - Now there are PNGs: 180 (apple-touch-icon), 192, 512 and maskable 512. They show the app's orb on `#161412`.
+  - The manifest gains `id` and `scope`, and `mobile-web-app-capable` was added. `display: standalone` plus `apple-mobile-web-app-capable` gives full screen with no browser bar.
+  - All are served (200) through the tailnet URL. **Delete the old home-screen icon and add it again**: iOS caches the icon.
+- **"s-Bahn":** the detail screen lowercased the fear's first letter (`charAt(0).toLowerCase()`). The model's text was "S-Bahn …". It's now shown as written (`fearLine`), with a test.
+- **Dark + light:** a read-only tour of all 16 screens (home, people, sharing, ledger, both pairing screens, every one of your worries) at 390×844 against your real Warden. **No console errors or warnings.**
+- **Wording read-through:**
+  - Fixed: "your calendar" for a public calendar → "a calendar"; an internal adapter name shown as a source (`weather_openmeteo`) → "Open-Meteo forecast"; the ledger fixes in block 8; the alert and outcome UI in block 7.
+  - Left as data, from the model, historical: "The fear: … user does not notice", the night S7's "09:00 UTC", and the old "stop search didn't answer" lines on the 08:16 worries.
+  - **Two rows on Home mislead:** under "For worry time", the night's S7 build failure shows as "Parked", and the T-11 Lena test worry is there too. They're your rows, so I didn't touch their status: **Let it go on both** (Needs Myron).
 
 ### 8. Ledger truth: your real numbers (07:34 UTC)
 `GET /api/ledger` = `{"worries_total":5,"active":3,"never_needed_you":0,"needed_you":0,"median_warning_lead_h":0.0,"came_true_rate":0.0,"came_true_by_type":{},"watchers_built":4,"sandboxes_live":3,"endpoints_denied":0,"peer_questions_answered":0,"locations_shared":0}`
