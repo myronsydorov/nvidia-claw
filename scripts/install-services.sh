@@ -68,5 +68,8 @@ serve() {
     return 1
   fi
 }
-serve /api http://127.0.0.1:8000/api && serve / http://127.0.0.1:8300 && sudo tailscale serve status
+# /relay: the ciphertext mailbox, so a second Warden on the tailnet (Anna's Mac, docs/ANNA_SETUP.md)
+# can reach it. Tailnet only, like the rest; the relay stores ciphertext only (THREAT_MODEL A6).
+serve /api http://127.0.0.1:8000/api && serve /relay http://127.0.0.1:8100 \
+  && serve / http://127.0.0.1:8300 && sudo tailscale serve status
 echo "done. Device token: grep WARDEN_DEVICE_TOKEN $CONF/warden.env"

@@ -29,6 +29,7 @@ import {
 	pairingStatusResponseSchema,
 	peerSchema,
 	peopleListItemSchema,
+	type ReassuranceAnswer,
 	type ReassuranceQuestion,
 	type SharingRulesResponse,
 	sharingRulesResponseSchema,
@@ -73,6 +74,12 @@ export interface Api {
 	/** Replaces the full rules list; the log is server-maintained. */
 	putSharingRules(body: SharingRulesResponse): Promise<SharingRulesResponse>;
 	getLedger(): Promise<LedgerResponse>;
+	/** What an allowed person asking "Are you OK?" would hear right now. */
+	mySignal(): Promise<ReassuranceAnswer>;
+	/** "I'm OK": answers "Normal day" for the next 3 hours and clears "I need help". */
+	checkIn(): Promise<void>;
+	/** Set or clear "I need help". */
+	setHelp(on: boolean): Promise<void>;
 	/** Live updates (GET /api/events). Returns an unsubscribe function. */
 	subscribe(listener: Listener): () => void;
 }
@@ -102,6 +109,9 @@ export function createMockApi(latencyMs = 250): Api {
 		rules: initialRules(),
 		questions_log: initialQuestionLog(),
 	};
+
+	let checkedInAt: number | null = null;
+	let help = false;
 
 	const listeners = new Set<Listener>();
 	function changed(id: string) {
@@ -332,6 +342,23 @@ export function createMockApi(latencyMs = 250): Api {
 		async getLedger() {
 			await wait(latencyMs);
 			return initialLedger();
+		},
+		async mySignal() {
+			await wait(latencyMs);
+			const ts = new Date().toISOString();
+			if (help) return { level: "help", reason: "asked_for_help", ts };
+			if (checkedInAt && Date.now() - checkedInAt < 3 * 3_600_000)
+				return { level: "normal", reason: "active_as_usual", ts };
+			return { level: "unknown", reason: "not_enough_data", ts };
+		},
+		async checkIn() {
+			await wait(latencyMs);
+			checkedInAt = Date.now();
+			help = false;
+		},
+		async setHelp(on) {
+			await wait(latencyMs);
+			help = on;
 		},
 		subscribe(listener) {
 			listeners.add(listener);

@@ -9,6 +9,7 @@ import {
 	pairingStatusResponseSchema,
 	peerSchema,
 	peopleListItemSchema,
+	reassuranceAnswerSchema,
 	sharingRulesResponseSchema,
 	type WorryDetail,
 	worryDetailSchema,
@@ -176,6 +177,13 @@ export function createHttpApi(opts: HttpApiOptions): Api {
 		putSharingRules: (body) =>
 			request("PUT", "/api/sharing-rules", sharingRulesResponseSchema, body),
 		getLedger: () => request("GET", "/api/ledger", ledgerResponseSchema),
+		mySignal: () => request("GET", "/api/me/signal", reassuranceAnswerSchema),
+		async checkIn() {
+			await request("POST", "/api/me/check-in", noContent);
+		},
+		async setHelp(on) {
+			await request(on ? "POST" : "DELETE", "/api/me/help", noContent);
+		},
 		subscribe: (listener) => opts.events.subscribe(listener),
 	};
 }

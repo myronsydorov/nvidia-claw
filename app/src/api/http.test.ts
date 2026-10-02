@@ -178,3 +178,41 @@ describe("http api", () => {
 		await expect(api.handOver("x")).rejects.toBeInstanceOf(ApiError);
 	});
 });
+
+describe("me: signal, check-in, help", () => {
+	it("calls the CONTRACTS §3 routes and rejects an answer outside the vocabulary", async () => {
+		const calls: string[] = [];
+		let reply: unknown = {
+			level: "normal",
+			reason: "active_as_usual",
+			ts: "2026-10-02T07:00:00Z",
+		};
+		const api = createHttpApi({
+			getToken: () => "tok",
+			onUnauthorized: () => {},
+			events: fakeEvents(),
+			fetchImpl: async (u, init) => {
+				calls.push(`${init?.method} ${String(u)}`);
+				return String(u).endsWith("/signal")
+					? json(reply)
+					: new Response(null, { status: 204 });
+			},
+		});
+		expect((await api.mySignal()).reason).toBe("active_as_usual");
+		await api.checkIn();
+		await api.setHelp(true);
+		await api.setHelp(false);
+		expect(calls).toEqual([
+			"GET /api/me/signal",
+			"POST /api/me/check-in",
+			"POST /api/me/help",
+			"DELETE /api/me/help",
+		]);
+		reply = {
+			level: "normal",
+			reason: "at the gym",
+			ts: "2026-10-02T07:00:00Z",
+		};
+		await expect(api.mySignal()).rejects.toThrow();
+	});
+});

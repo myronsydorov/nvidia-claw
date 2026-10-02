@@ -1,13 +1,21 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type {
 	Peer,
+	ReassuranceAnswer,
 	ReassuranceQuestion,
 	SharingRule,
 	SharingRulesResponse,
 } from "../api/schemas";
-import { BackLink, Screen, SectionLabel, Toggle } from "../components/ui";
 import {
+	BackLink,
+	Button,
+	Screen,
+	SectionLabel,
+	Toggle,
+} from "../components/ui";
+import {
+	answerHeadline,
 	defaultRule,
 	levelLabel,
 	questionLabel,
@@ -92,6 +100,71 @@ function RuleCard({
 				</>
 			)}
 		</li>
+	);
+}
+
+/** What an allowed person asking "Are you OK?" would hear now, and the two things I can say. */
+function RightNow() {
+	const [signal, setSignal] = useState<ReassuranceAnswer | null>(null);
+	const [busy, setBusy] = useState(false);
+	const [failed, setFailed] = useState(false);
+	const load = useCallback(async () => {
+		try {
+			setSignal(await api.mySignal());
+		} catch {
+			setFailed(true);
+		}
+	}, []);
+	useEffect(() => {
+		void load();
+	}, [load]);
+	const act = async (fn: () => Promise<void>) => {
+		setBusy(true);
+		setFailed(false);
+		try {
+			await fn();
+			await load();
+		} catch {
+			setFailed(true);
+		}
+		setBusy(false);
+	};
+	const help = signal?.level === "help";
+	return (
+		<section className="mb-12" aria-label="Right now">
+			<SectionLabel>Right now</SectionLabel>
+			<div className="rounded-3xl border border-line bg-surface p-5">
+				<p className="text-sm text-faint">
+					If someone you allow asks “Are you OK?”, they hear
+				</p>
+				<p
+					className="mt-1 font-display text-[22px] leading-tight font-light"
+					data-testid="my-signal"
+				>
+					{signal ? answerHeadline(signal) : "…"}
+				</p>
+				<div className="mt-5 flex gap-3">
+					<Button disabled={busy} onClick={() => act(() => api.checkIn())}>
+						I'm OK
+					</Button>
+					<Button
+						variant="quiet"
+						disabled={busy}
+						onClick={() => act(() => api.setHelp(!help))}
+					>
+						{help ? "I'm fine again" : "I need help"}
+					</Button>
+				</div>
+				<p className="mt-3 text-sm leading-relaxed text-faint">
+					“I'm OK” counts for 3 hours. “I need help” stays until you clear it.
+				</p>
+				{failed && (
+					<p className="mt-3 text-[15px] text-muted">
+						That didn't go through. Nothing changed.
+					</p>
+				)}
+			</div>
+		</section>
 	);
 }
 
@@ -193,6 +266,7 @@ export function Sharing() {
 					where you are. Every question is written down here.
 				</p>
 			</header>
+			<RightNow />
 			{d.state === "ready" && (
 				<Body peers={d.data[0].map((i) => i.peer)} initial={d.data[1]} />
 			)}
