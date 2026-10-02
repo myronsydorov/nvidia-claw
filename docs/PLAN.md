@@ -55,7 +55,7 @@ Status: `todo · doing · done · cut`. Every task has **acceptance criteria and
 |---|---|---|---|---|
 | T-14 | Claude | Relay (ciphertext-only mailbox) plus pairing with a one-time code | Relay database dump contains no plain text (test); pairing works between two local Wardens | done‡‡ |
 | T-15 | Claude | Reassurance: query/answer, vocabulary enforcement, sharing rules, "normal day" signal v1, privacy receipt | Answers outside the vocabulary are rejected (test); the receipt shows the bytes sent | done‡‡ |
-| T-16 | You | Second install on the Intel MacBook (Ubuntu) as "Anna" | "Is Anna OK?" answered end to end between the two machines | todo |
+| T-16 | You | Second install on the Intel MacBook (Ubuntu) as "Anna" | "Is Anna OK?" answered end to end between the two machines | doing: macOS now (not Ubuntu), `docs/ANNA_SETUP.md` + `scripts/anna-setup.sh` ready; proven between two Wardens on the host (HANDOFF block 5); the Mac run is yours |
 | T-17 | Claude | App: People, sharing rules + question log, Ledger | Screenshots; Ledger numbers match `/api/ledger` | done¶¶ |
 | T-18 | Claude | Web push (VAPID keys) for act-now alerts and approvals | A push arrives on the installed phone app | todo |
 | T-19 | Claude | *Stretch, L3:* watcher bundle (code + policy + hash), publish/import, "Borrow a watcher" | An imported watcher runs with **exactly** its declared policy | todo |
@@ -121,9 +121,9 @@ Details in HANDOFF.md.
 ## Fri 2 Oct: ship
 | ID | Owner | Task | Acceptance / verify | Status |
 |---|---|---|---|---|
-| T-20 | Claude | `scripts/restart.sh`, error and empty states, recovery after a reboot | Reboot the Brev machine → `restart.sh` → healthy within 5 minutes | doing (restart.sh + recovery done‡‡‡; app error/empty states not started) |
-| T-21 | Claude | README: pitch, diagram, quickstart, security model, honest limits | A fresh reader can run `make dev` from the README alone | todo |
-| T-22 | You + Claude | `/demo-check`, then **record the video by 18:00** | Checklist all green | todo |
+| T-20 | Claude | `scripts/restart.sh`, error and empty states, recovery after a reboot | Reboot the Brev machine → `restart.sh` → healthy within 5 minutes | doing (restart.sh + recovery done‡‡‡, run at boot by `custody-boot.service`, daily DB backups; a real reboot not run; app error/empty states exist per screen, not reviewed as a set) |
+| T-21 | Claude | README: pitch, diagram, quickstart, security model, honest limits | A fresh reader can run `make dev` from the README alone | done (verified from a fresh GitHub clone, 2 Oct; HANDOFF block 11) |
+| T-22 | You + Claude | `/demo-check`, then **record the video by 18:00** | Checklist all green | doing: 5 ✅ 4 ◐ 1 ❌ without the phone (HANDOFF block 12) |
 | T-23 | You | **Submit by 20:00** | Confirmation received | todo |
 
 ‡‡‡ T-20 (2026-10-01, DigitalOcean host): `scripts/restart.sh` brings back docker → `nemoclaw-openshell-gateway` (user service) → the brain sandbox (`nemoclaw start`, then `recover` if 18789 doesn't answer) → refreshes the gateway token (**it rotates on every brain restart**: `scripts/refresh-gateway-token.sh`) → `custody-relay`/`custody-app`/`custody-warden` (systemd user units in `deploy/systemd/`, linger on, installed by `scripts/install-services.sh`) → checks. The Warden's scheduler reconciles watcher sandboxes on start (`Scheduler.reconcile`: `sandbox start` if stopped, recreate from the approved policy + code if gone; tested). Evidence: with every component stopped (no containers, no listeners), `restart.sh` → **HEALTHY in 95 s** (budget 300 s), watcher sandbox back to Ready. A real `reboot` was not run while the owner was away.

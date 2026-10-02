@@ -1,9 +1,46 @@
 # Handoff: production host bring-up (2026-10-01)
 
-## ⚑ Friday 2 Oct, unattended session (started 08:26 Berlin), live state
+## ⚑ Friday 2 Oct, unattended session (08:26–10:00 Berlin): summary
 
-### Needs Myron (in order)
-_(filled in at the end of the session)_
+**Done:** all 12 blocks. Everything is deployed, `restart.sh` → HEALTHY, CI is green, and the security review found no invariant violations.
+- 621 Python and 93 app tests, `make e2e` 2, `e2e:mock` 14, all passing.
+
+**Failed, or not possible from here, and why:**
+- **The 08:17 failure was BVG's public API being down** (`503` from `*.transport.rest`; back at 09:50). It wasn't our bug, but the one-shot lookup made it fatal. That is fixed: retries plus a stop cache.
+- **No real worry has produced `act_now` yet.** The alert path is proven only on a separate test Warden.
+- **"Is Anna OK?" between two machines** isn't done; it needs your Mac. It is proven between two Wardens on this host.
+- **The iPhone check** (status bar, home-screen icon) needs your phone.
+- **A real reboot** was not run (you asked me not to). The new boot unit was started under systemd instead.
+
+**Your real ledger now:**
+- Handed over **5**, still watched **3**, watchers built **4**, sandboxes live **3**.
+- **0** outcomes known, so the app shows "No outcomes yet" and no 91.4% comparison.
+- **0** questions about you, **0** locations shared.
+- Not counted: 3 build failures (S7) and 1 test worry (Lena, T-11).
+
+### Needs Myron (in this order)
+1. **Phone, 5 min:**
+   - Delete the Custody icon from the home screen, open the tailnet URL in Safari, then Share → Add to Home Screen. iOS caches the old icon.
+   - Check that the clock no longer overlaps content when you scroll, and look at dark and light mode.
+   - On Home, **Let it go** on the two misleading rows under "For worry time": the night's S7 (a build failure) and "Lena … T-11 test dinner".
+2. **Mac, 15 min:** follow `docs/ANNA_SETUP.md`:
+   - `git pull`, then `./scripts/anna-setup.sh`, then `./scripts/anna-setup.sh start`;
+   - pair your phone (Show a code) with the Mac (Enter their code), compare the 8 digits, tap It matches on both;
+   - on the Mac, tap **I'm OK**;
+   - on the phone, ask **Is Anna OK?**;
+   - then run `./scripts/anna-setup.sh proof`.
+   - **Without "I'm OK", a fresh Mac honestly answers "Not enough to say".**
+3. **Decide the video script** (DESIGN §8 mismatches are listed under block 12 below). Mainly:
+   - there's no DHL key for the parcel scene;
+   - "U8 strike" can't be watched as written;
+   - the hook's 91% must be said as research;
+   - there's no real `act_now` yet.
+4. **The act_now scene:** either show the test-Warden screenshots in `~/custody-evidence/alert-path/`, **labelled as a test**, or film a real alert if one fires (rain 16:00–19:00). Never present the test as real usage.
+5. **Just before recording**, ask "Is Anna OK?" once, then run `./scripts/demo-evidence.sh` on the host (fresh relay rows, a live denial, the sandbox list). It takes about 25 s and prints no secrets.
+6. **Record by 18:00, submit by 20:00** (T-22, T-23).
+7. Optional, after submitting:
+   - a Tailscale ACL limiting `tcp:443` on this node to your devices (THREAT_MODEL A6);
+   - Ledger "endpoints denied" could be wired to the OpenShell log.
 
 ### Progress
 | # | Block | State |
@@ -18,6 +55,8 @@ _(filled in at the end of the session)_
 | 8 | Ledger truth | **done**: real numbers below; the T-11 test worry is no longer counted; unmeasured tiles are labelled; 91.4% is labelled research |
 | 9 | App polish | **done** (desktop-verified): status-bar strip, PNG home-screen icons + manifest, names keep capitals, 2 wording fixes; dark + light, no console errors. **Check on the iPhone** (Needs Myron) |
 | 10 | Evidence script | **done**: `scripts/demo-evidence.sh`, 5 sections all ✔ live, ~25 s |
+| 11 | README (T-21) | **done**: quickstart verified from a fresh GitHub clone; architecture diagram; real / simulated / cut; ADR-0003 limit; judging criteria |
+| 12 | Demo check | **done**: 5 ✅, 4 partly, 1 ❌ (details below) |
 
 ### 1. The 08:17 stop lookup failure: BVG's public API was down
 Warden log (journal, UTC; 08:17 Berlin = 06:17 UTC). Three hand-overs, each one BVG lookup, each `503`:
@@ -127,6 +166,47 @@ A clearly labelled **test Warden "TEST-Anna"** ran on `127.0.0.1:8010` with its 
 - Your `/api/ledger` is unchanged.
 
 **Seen on the way, fixed in block 9:** the fear line lowercased the first letter ("The fear: open-Meteo…", the same bug as "s-Bahn").
+
+### 12. Demo check (everything that doesn't need your phone)
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| 1 | `/api/health` healthy; sandbox count = active watchers | ✅ | `{"status":"ok","sandboxes_live":3}`, 3 watching worries, `demo-evidence.sh` §1 "3 running watchers, 3 watcher sandboxes, all Ready, no strays" |
+| 2 | Hand-over → card → approve → watching in < 60 s | ◐ | Live pipeline on the test Warden: hand-over → card in **19 s**, approve → watching at once. `make e2e` (real Warden, recorded answers) passes. **The phone part needs you** |
+| 3 | A watcher produced `act_now` in **real usage**, and the alert card shows evidence | ❌ (real) / ✅ (test) | None of your worries has hit `act_now` (no `act_now` event in any timeline). The card with evidence is proven on the test Warden (block 7, screenshots) |
+| 4 | An unusual worry (not parcel or weather) compiles and passes its dry run | ✅ | GitHub status (`http_json`, `www.githubstatus.com/api/v2/status.json`) and the school calendar (`ics_calendar`, Google ICS) both passed their dry runs and are watching in sandboxes `cw-zzrsdcze` / `cw-76epww8s` |
+| 5 | "Is Anna OK?" from the 2nd machine < 10 s; receipt; 2nd machine's OpenShell egress log shows only relay traffic | ◐ | Two Wardens on this host: **0.88 s**, receipt 316 bytes (block 5). The Mac isn't done (you). **The last clause can't be met as written:** no OpenShell runs on the Mac. `anna-setup.sh proof` lists the Warden process's TCP connections instead (rehearsed: relay 100.81.50.38:443 + loopback only) |
+| 6 | Ledger = `/api/ledger`; nothing fake presented as real | ✅ | All tiles equal the API (read-only tour + `make e2e` ledger spec); the unmeasured tiles say so; 91.4% is labelled research |
+| 7 | Installed to home screen; dark and light; no console errors | ◐ | Dark + light on 16 screens, **0 console errors** (desktop Chromium, 390×844). Icons and manifest fixed and served. **The iPhone install needs you** |
+| 8 | README states the hosted-inference limit (ADR-0003) | ✅ | README "Honest limits": worry text goes to NVIDIA's hosted endpoints, and L1 doesn't keep it on-device |
+| 9 | `restart.sh` tested since the last deploy | ✅ | Run after every deploy today, last at 09:48: `HEALTHY in 32s` |
+| 10 | DESIGN §8 matches the system | ◐ | Mismatches below |
+
+**DESIGN §8 (video script) vs what the system really does:**
+1. **Hook "91% of worries never come true."** That is a research result (LaFreniere & Newman 2019, people with generalized anxiety), not Custody data and not all worries. Say "In one study, 91% …". The app labels it the same way.
+2. **Parcel scene.** The DHL adapter needs `DHL_API_KEY` and has never run live. Use a worry that is really being watched: rain 16:00–19:00 (`cw-gnnrrs3z`), GitHub (`cw-zzrsdcze`) or the school calendar. "Silence" is true: `ok` results are silent.
+3. **"Will the strike hit my U8 tomorrow?"**
+   - `transit_bvg` reads a stop's departures (cancellations and delays). It can't know about a strike in advance.
+   - The worry must name a stop ("U8 from Hermannplatz"); otherwise it parks and asks for one.
+   - It now watches only the direction of travel and ≥ 10 min, and BVG's API was down this morning.
+   - Use GitHub status or the school calendar as the unusual worry, or a transit worry that names a stop and a time.
+4. **"Is Anna OK?" → "Normal day."** True only after Anna taps **I'm OK** on the Mac, or has 3+ days of activity history. "The audit log: one tiny encrypted message, zero locations": show the privacy receipt in the app, and `demo-evidence.sh` §5 (relay rows). The Mac side has no OpenShell log.
+5. **Stats wall, "real numbers from the week".** They're real but small: 5 handed over, 3 watched, 0 outcomes. **No came-true number and no 91.4% bar appear until an outcome is recorded.** The rain worry closes at 19:00 and the GitHub one at 23:59, both after the 18:00 recording.
+6. **Alerts.** There is no web push (cut); the alert is an in-app card. No real `act_now` has happened yet (see item 3 above).
+7. **Architecture and vision**: match. L3 is presented as vision, and it is not built.
+
+### 11. README (T-21)
+- `README.md` contains:
+  - the pitch (91.4% framed as research);
+  - one Mermaid architecture diagram;
+  - a **quickstart verified from a fresh clone of GitHub `main`**;
+  - a real / simulated / not measured / cut table;
+  - the ADR-0003 hosted-inference limit and the other honest limits;
+  - a security model summary;
+  - a "For the judges" section mapped to the three criteria.
+- **Fresh-clone test:** `make setup` (4 s, warm cache), then `make dev WARDEN_PORT=8031 APP_PORT=5181`. The app gave 200 and `/api/health` gave 200 through the app's proxy. A DHL worry handed over on recorded answers reached `awaiting_approval` with its card.
+- **Found and fixed on the way:**
+  - Without `.env` the dev Warden had no device token, so every call was a 401 and the quickstart couldn't work. `make dev` now creates `.env` and writes a random token into it (never printed).
+  - The dev Warden now binds 127.0.0.1, and the ports can be set.
 
 ### 10. `scripts/demo-evidence.sh` (for the screen recording)
 Run on the host: `./scripts/demo-evidence.sh` (about 25 s; prints no token, key or body). Live output at 09:45 Berlin, all ✔:
