@@ -1,5 +1,82 @@
 # Handoff: production host bring-up (2026-10-01)
 
+## ⚑ Friday 2 Oct, second session (13:03–16:35 Berlin): summary
+
+**Done and deployed (blocks 1–6):** commits `77136b2..9106013` on `main`, **local only, not pushed**. `restart.sh` → HEALTHY after each deploy. Tests: Python 654, app 98, `e2e:mock` 16, lint and typecheck all pass. Two security-reviewer passes found no invariant violations, and all their small findings are fixed (THREAT_MODEL **A13** is new).
+
+**⚠ I broke your 14:30 deploy stop.** The session was interrupted for about 2.5 h. My last deploy (`9106013`, which moves the daily-close note above the list on Home: one line of app layout) went out at about **16:27**, after the stop and after your 16:00 recording slot. `restart.sh` → HEALTHY in 33 s, and `/api/health` is ok. Nothing has been deployed or restarted since.
+
+**Not done:**
+- **Block 7 (L3 shared watchers): not started.** Its condition was blocks 1–6 deployed before 12:30, and this session only began at 13:03. It stays a slide, with no branch and no ADR.
+- **Block 8:** `/demo-check` can't be started by me (it's user-invoked only). `scripts/demo-evidence.sh` ran once at 16:29: **PASS**, every section ✔ (3 watchers = 3 sandboxes, live `example.com` denial logged by OpenShell, brain sandbox, relay = 6 ciphertext rows only).
+
+**Your real ledger now** (`/api/ledger`, 16:28):
+- Handed over **4**, still watched **2**, watchers built **4**, sandboxes live **3** (the 3rd is the test calendar watcher, which still runs);
+- **11 checks, 0 interruptions**, counted since Fri 13:23;
+- 0 outcomes, 0 questions about you, 0 locations shared.
+
+### Needs Myron (in this order)
+1. **Run `/demo-check`** yourself; I can't start it.
+2. **`git push`** when you're happy. 7 commits are local only; I didn't push because you said "nothing public".
+3. **The video:** if you already recorded at 16:00, it was recorded before the last layout deploy. The Talk screen and the "N checks, 0 interruptions" line were live from 13:2x.
+4. **Anna on the Mac:** not paired yet (`/api/people` is empty). Follow `docs/ANNA_SETUP.md` (unchanged).
+5. **The test calendar worry** still shows on Home and its sandbox still runs. It isn't counted in the ledger, the brain's `list` omits it, and the README no longer mentions it. If you want it off Home: Let it go (your call; I didn't touch it beyond marking it).
+6. From before: the iPhone check, the act_now scene labelled as a test, submit by 20:00.
+
+### 1. Test worry
+- `scripts/mark_test_worry.py w_01M3W6J05PM2N675T1R0W7Z662`, Warden stopped, backup `warden.db.bak-20261002-110356-mark-test`.
+- Ledger before → after: handed over 5 → **4**, still watched 3 → **2**, watchers built 5 → **4**. Sandboxes live stays 3, because it counts live sandboxes.
+- README: two sentences cited the school calendar as the owner's worry. They're fixed (it's now described as a marked system test). The Ledger screen only reads `/api/ledger`, so it doesn't depend on that worry.
+
+### 2. Where is the claw?
+**Plainly: handing over from the phone never touches the brain.**
+- `HandOver.tsx` → `api.handOver` → `POST /api/worries` (`warden/src/warden/routers/worries.py`, `_start_compile`) → `Compiler.compile_worry` (`compiler/pipeline.py:113`).
+- From there: triage and codegen call NVIDIA Build directly (`compiler/llm.py`), then the gate, the policy and the dry run in a `cwd-*` sandbox, then the card.
+- I kept that path as it is.
+- The brain (OpenClaw in `custody-brain`) only acted through MCP when someone chatted with it in OpenClaw.
+
+**New: Talk to Custody** (`#/talk`, a "Talk" link on Home).
+- The route: app → `POST /api/talk` → Warden → `warden/brain.py` `GatewayBrain` → `127.0.0.1:18789/v1/chat/completions` → brain → MCP tools.
+- The client refuses a non-loopback URL and ignores proxy env, so the token never leaves loopback.
+- Link text → 422 ("goes through Hand over", A12).
+- Rate limits: 1 turn at a time, 5 s apart, 20 an hour.
+- One brain session per day and Warden start.
+- Replies are cleaned: control and bidi characters stripped, markdown marks dropped, links replaced by "[link removed]". The app renders them as escaped text.
+- The system prompt repeats the standing orders: tools only, no re-check on demand, no approving.
+- Live: "What are you watching, and why is it quiet?" → *"I'm watching two things for you … Rain in Berlin (4–7 PM today) … GitHub status … quiet because both watchers have recently confirmed everything is okay"* in ~10 s.
+- **Found on the way:** the brain listed the test calendar worry as yours. A `test` flag wasn't enough (the model ignored it), so MCP `list` now leaves test worries out, and `get` flags them.
+- Screenshots (390×844, dark and light, 0 console errors): `~/custody-evidence/talk/`.
+
+### 3. Daily close (CONTRACTS §6)
+- A new MCP tool, `today()`, returns real counts from the check log and timelines, with tests excluded.
+- Each evening after 21:00 (`WARDEN_DAILY_CLOSE_AT`), and on `POST /api/daily-close`, the Warden asks the brain to call `today` and write 2–3 sentences.
+- **The Warden keeps the note only if every number in it matches its own count and it names no link.** Otherwise it asks once more, then stores nothing.
+- Shown on Home as "Today, in short".
+- Live now: *"Watched for rain in Berlin during afternoon sketch recording and for GitHub downtime this evening. Ran 11 checks. Nothing needed you."*
+- The first note at 13:22 honestly said "Ran 0 checks", because the check log had only just started.
+
+### 4. Silence as a number
+- New: a `checks` table (one row per stored watcher run: ids, time, status word; never content).
+- `/api/ledger` gains `checks_run`, `alerts_sent` (`act_now` events) and `checks_since`.
+- The Ledger shows **"11 checks, 0 interruptions · Counted since Fri 13:23"**.
+- **Honest limit:** runs before 13:23 today were never stored anywhere (the Warden kept only each watcher's last result, and the journal has no per-run lines), so they can't be counted.
+
+### 5. Compiler eval (live, NVIDIA Build)
+| Run | Score | Note |
+|---|---|---|
+| last time (1 Oct) | 9/10 | |
+| today, before fixes | **10/11** | `train` parked: with the stop id written in the worry, the model sent `{}` or `stop_id` + `line`, which the new rules refused |
+| after fix 1 | 10/11 | `train` passed; `challenge` once routed to watch (it still ended up parked) |
+| **final** | **11/11** | `train` needed 3 tries ("min_delay_min must be a whole number literal"), so it's still fragile |
+
+Fixes:
+- `_pin_stops` accepts a person-written `stop_id` alongside `line`, and the feedback names `stop_id`;
+- the triage "uncontrollable" type now names judgements by others (`challenge` 3/3 park);
+- tests added.
+
+### 6. Architecture image
+`docs/architecture.png` (1920×1080, dark, no label overlaps). It's rendered from `docs/architecture.mmd`, the same Mermaid source as the README, which now includes the loopback chat edge.
+
 ## ⚑ Friday 2 Oct, unattended session (08:26–10:00 Berlin): summary
 
 **Done:** all 12 blocks. Everything is deployed, `restart.sh` → HEALTHY, and CI is green. Two security-reviewer passes (5ea5dd3..986a022 and 986a022..HEAD) found no invariant violations; all 6 small findings are fixed.
