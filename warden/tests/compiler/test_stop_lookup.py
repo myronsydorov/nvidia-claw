@@ -72,6 +72,21 @@ def test_a_stop_id_the_person_wrote_is_still_accepted() -> None:
     assert built.adapters[0].endpoints[0].path == "/stops/900100003/departures"
 
 
+def test_a_stop_id_the_person_wrote_may_come_with_a_line() -> None:
+    # Live eval, 2 Oct: the model sent the person's id plus the line; that's still the person's id.
+    text = "Is the S1 from Alexanderplatz (BVG stop 900100003) going to be cancelled?"
+    built = codegen.build(answer({"stop_id": "900100003", "line": "S1"}, "900100003"), text)
+    assert built.adapters[0].endpoints[0].path == "/stops/900100003/departures"
+    with pytest.raises(codegen.MissingInput):  # anything else next to it is still refused
+        codegen.build(answer({"stop_id": "900100003", "host": "x"}, "900100003"), text)
+
+
+def test_empty_transit_params_get_feedback_naming_stop_id() -> None:
+    text = "Is the S1 from Alexanderplatz (BVG stop 900100003) going to be cancelled?"
+    with pytest.raises(codegen.CodegenError, match="stop_id"):
+        codegen.build(answer({}, "900100003"), text)
+
+
 def test_a_named_stop_is_pinned_from_the_lookup(bvg: list[dict[str, str]]) -> None:
     content = answer({"stop": "Lichtenberg", "line": "S7"}, codegen.STOP_PLACEHOLDER)
     queries = codegen.stop_queries(content, S7_WORRY)

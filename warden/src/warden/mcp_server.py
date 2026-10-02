@@ -4,7 +4,7 @@ Mounted on the Warden at `/mcp/` (Streamable HTTP, stateless JSON; mind the trai
 behind its own bearer token `WARDEN_MCP_TOKEN` (never the device token; off without it).
 
 - **Exactly the CONTRACTS §4 tools**, served as `custody` server tools: hand_over, list, get,
-  let_go, record_outcome, ask_peer, ledger. There is **no approval tool** and no route to
+  let_go, record_outcome, ask_peer, ledger, today. There is **no approval tool** and no route to
   `approve`/`deny` (THREAT_MODEL A4): approval only ever comes from the human, in the app.
 - Each tool dispatches in-process to the matching `/api` route (same locking, events and
   validation), from a fixed allowlist, with ids checked against their exact shapes first.
@@ -21,6 +21,7 @@ import time
 from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import httpx2 as httpx
@@ -30,6 +31,8 @@ from mcp.server.mcpserver.exceptions import ToolError as SdkToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from warden.brain import URLISH
+from warden.checks import day_numbers
 from warden.compiler import guard
 from warden.models import WatchResult
 
@@ -39,7 +42,6 @@ _PEER_ID = re.compile(r"p_[0-9A-HJKMNP-TV-Z]{26}")
 # the dry run would GET a URL it chose before any human approval. The compiler parks a URL that
 # isn't in the worry text, so with none allowed here, only fixed-host adapters can run. Links go
 # through the app. Plus a cap on hand-overs.
-_URLISH = re.compile(r"https?:|www\.|\b[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}\b(/|$|\s)", re.I)
 HAND_OVER_PER_HOUR = 10
 _STATUSES = (
     "triaging", "compiling", "awaiting_approval", "watching",
@@ -130,7 +132,7 @@ def build_server(app: FastAPI) -> MCPServer:
         text = text.strip()
         if not 1 <= len(text) <= 2000:
             raise ToolError("A worry needs 1 to 2000 characters.")
-        if _URLISH.search(text):
+        if URLISH.search(text):
             raise ToolError(
                 "Worries with a link or web address must be handed over in the Custody app, "
                 "so the person sees exactly what will be read. Ask them to paste it there."
@@ -211,6 +213,13 @@ def build_server(app: FastAPI) -> MCPServer:
             raise ToolError(messages[response.status_code])
         response.raise_for_status()
         return dict(response.json())  # ReassuranceAnswer + PrivacyReceipt: fixed vocabulary
+
+    @server.tool(name="today")
+    async def today() -> dict[str, Any]:
+        """Today's real numbers: checks run, alerts sent, worries that needed the person, and
+        what is being watched. Use only these numbers when you say what happened today."""
+        numbers = await day_numbers(app.state.store, datetime.now(UTC))
+        return numbers.model_dump(mode="json")
 
     @server.tool(name="ledger")
     async def ledger() -> dict[str, Any]:

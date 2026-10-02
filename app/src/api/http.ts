@@ -3,6 +3,7 @@ import type { Api } from "./client";
 import type { EventStream } from "./events";
 import {
 	askPeerResponseSchema,
+	dailyCloseSchema,
 	healthResponseSchema,
 	ledgerResponseSchema,
 	pairingStartResponseSchema,
@@ -11,6 +12,7 @@ import {
 	peopleListItemSchema,
 	reassuranceAnswerSchema,
 	sharingRulesResponseSchema,
+	talkReplySchema,
 	type WorryDetail,
 	worryDetailSchema,
 	worrySchema,
@@ -184,6 +186,9 @@ export function createHttpApi(opts: HttpApiOptions): Api {
 		putSharingRules: (body) =>
 			request("PUT", "/api/sharing-rules", sharingRulesResponseSchema, body),
 		getLedger: () => request("GET", "/api/ledger", ledgerResponseSchema),
+		talk: (text) => request("POST", "/api/talk", talkReplySchema, { text }),
+		getDailyClose: () =>
+			request("GET", "/api/daily-close", dailyCloseSchema.nullable()),
 		mySignal: () => request("GET", "/api/me/signal", reassuranceAnswerSchema),
 		async checkIn() {
 			await request("POST", "/api/me/check-in", noContent);

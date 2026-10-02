@@ -127,7 +127,8 @@ else:
 
 _PROMPT_PARAMS = {
     "transit_bvg": 'stop (the stop name exactly as the person wrote it), line (e.g. "S7"; '
-    "optional)",
+    "optional); or, only if the person wrote a numeric BVG stop id, stop_id (that id) instead "
+    "of stop",
 }
 
 
@@ -339,13 +340,21 @@ def _pin_stops(
             continue
         params = item.params
         if "stop_id" in params:
-            # Only an id the person wrote themselves; never one from the model's memory.
-            if set(params) != {"stop_id"} or str(params["stop_id"]).strip() not in worry_text:
+            # Only an id the person wrote themselves; never one from the model's memory. A
+            # `line` next to it is harmless (run.py filters by line itself) and is dropped.
+            if (
+                set(params) - {"stop_id", "line"}
+                or str(params["stop_id"]).strip() not in worry_text
+            ):
                 raise MissingInput("transit_bvg")
+            item.params = {"stop_id": str(params["stop_id"]).strip()}
             continue
         stop, line = params.get("stop"), params.get("line")
         if set(params) - {"stop", "line"} or not isinstance(stop, str) or not stop.strip():
-            raise CodegenError('transit_bvg takes params {"stop": "<name>", "line": "<line>"}')
+            raise CodegenError(
+                'transit_bvg takes params {"stop": "<name>", "line": "<line>"}, or '
+                '{"stop_id": "<id>"} when the person wrote a numeric BVG stop id'
+            )
         if stop.strip().lower() not in worry_text.lower():
             raise MissingInput("transit_bvg")  # a stop the person didn't name
         key = (stop.strip(), line.strip() if isinstance(line, str) else None)

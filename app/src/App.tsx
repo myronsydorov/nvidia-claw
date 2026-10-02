@@ -9,6 +9,7 @@ import { Ledger } from "./screens/Ledger";
 import { PairEnter, PairShow } from "./screens/Pair";
 import { People } from "./screens/People";
 import { Sharing } from "./screens/Sharing";
+import { Talk } from "./screens/Talk";
 import { WorryDetail } from "./screens/WorryDetail";
 
 function App() {
@@ -37,6 +38,8 @@ function App() {
 			return <Sharing />;
 		case "ledger":
 			return <Ledger />;
+		case "talk":
+			return <Talk />;
 		case "pair-show":
 			return <PairShow />;
 		case "pair-enter":

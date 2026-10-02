@@ -1,4 +1,6 @@
 import {
+	type DailyClose,
+	dailyCloseSchema,
 	type LedgerResponse,
 	ledgerResponseSchema,
 	type Peer,
@@ -160,5 +162,19 @@ export function initialLedger(): LedgerResponse {
 		endpoints_denied: 7,
 		peer_questions_answered: 12,
 		locations_shared: 0,
+		checks_run: 214,
+		alerts_sent: 2,
+		checks_since: "2026-09-25T09:00:00Z",
+	});
+}
+
+export function mockDailyClose(): DailyClose {
+	return dailyCloseSchema.parse({
+		date: new Date().toISOString().slice(0, 10),
+		text: "Today I watched the rain, GitHub and your parcel. 38 checks ran, and nothing needed you.",
+		written_at: iso(-30 * 60_000),
+		checks_run: 38,
+		alerts_sent: 0,
+		needed_you: 0,
 	});
 }

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol
 
+from warden.checks import record_check
 from warden.db import Store
 from warden.events import EventBus
 from warden.models import Evidence, TimelineEvent, Watcher, WatchResult, Worry
@@ -169,6 +170,7 @@ class Scheduler:
         now = self._clock.now()
         entry = await self._entry(watcher.id)
         watcher.last_result = result
+        await record_check(self._store, watcher, result.status, now)
 
         if result.status == "error":
             entry.consecutive_errors += 1

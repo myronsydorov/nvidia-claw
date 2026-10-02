@@ -262,6 +262,28 @@ export const ledgerResponseSchema = z.object({
 	endpoints_denied: z.number().int(),
 	peer_questions_answered: z.number().int(),
 	locations_shared: z.literal(0),
+	checks_run: z.number().int(),
+	alerts_sent: z.number().int(),
+	checks_since: datetime.nullable(),
+});
+
+// Talk to Custody (POST /api/talk) and the brain's daily close (CONTRACTS §3, §6).
+export const talkRequestSchema = z.object({
+	text: z.string().min(1).max(1000),
+});
+
+export const talkReplySchema = z.object({
+	reply: z.string().max(2000),
+	at: datetime,
+});
+
+export const dailyCloseSchema = z.object({
+	date: z.string(),
+	text: z.string().max(400),
+	written_at: datetime,
+	checks_run: z.number().int(),
+	alerts_sent: z.number().int(),
+	needed_you: z.number().int(),
 });
 
 export const eventTypeSchema = z.enum([
@@ -292,4 +314,6 @@ export type QuestionLogEntry = z.infer<typeof questionLogEntrySchema>;
 export type SharingRulesResponse = z.infer<typeof sharingRulesResponseSchema>;
 export type PushSubscription = z.infer<typeof pushSubscriptionSchema>;
 export type LedgerResponse = z.infer<typeof ledgerResponseSchema>;
+export type TalkReply = z.infer<typeof talkReplySchema>;
+export type DailyClose = z.infer<typeof dailyCloseSchema>;
 export type Event = z.infer<typeof eventSchema>;

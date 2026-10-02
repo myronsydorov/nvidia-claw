@@ -7,8 +7,9 @@ from typing import Any
 
 from fastapi import Depends, FastAPI
 
-from warden import db
+from warden import daily_close, db
 from warden.auth import require_device_token
+from warden.brain import TalkLimiter, brain_from_env
 from warden.compiler import Compiler
 from warden.compiler.llm import llm_from_env
 from warden.events import EventBus
@@ -27,6 +28,7 @@ from warden.routers import (
     people,
     push,
     sharing_rules,
+    talk,
     worries,
 )
 from warden.sandbox.factory import get_sandbox_driver
@@ -68,6 +70,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             _spawn(app, reassurance.run_forever())
         if not isinstance(probe, NoProbe):
             _spawn(app, reassurance.run_sampler_forever())
+        # Talk to Custody and the daily close: the loopback chat endpoint (AGENTS #4).
+        app.state.brain = brain_from_env()
+        app.state.talk_limiter = TalkLimiter()
+        if app.state.brain is not None and os.environ.get("WARDEN_DAILY_CLOSE") != "off":
+            _spawn(app, daily_close.run_forever(app, app.state.store, app.state.brain))
         scheduler_task: asyncio.Task[None] | None = None
         if os.environ.get("WARDEN_SCHEDULER") != "off":
             scheduler = Scheduler(
@@ -121,5 +128,6 @@ app.include_router(events.router)
 app.include_router(push.router)
 app.include_router(pairing.router)
 app.include_router(me.router)
+app.include_router(talk.router)
 # /mcp: the brain's tools (CONTRACTS §4), behind WARDEN_MCP_TOKEN; no approval tool.
 mount_mcp(app)

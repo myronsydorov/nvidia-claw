@@ -165,17 +165,22 @@ Key ids are 32 lowercase hex chars. The ciphertext is standard base64, at most 4
 | GET | `/api/ledger` | LedgerResponse — stats-wall aggregates |
 | GET | `/api/events` | server-sent events: `worry.updated`, `watcher.result`, `approval.needed`, `alert.act_now`, `peer.answer` |
 | POST | `/api/push/subscribe` | PushSubscription body → `204` |
+| POST | `/api/talk` | TalkRequest `{ text }` (1–1000 chars) → TalkReply `{ reply, at }`: one turn with the brain (Warden → loopback OpenClaw `/v1/chat/completions` → brain → MCP tools). `422` text with a link or web address (it goes through `POST /api/worries`, THREAT_MODEL A12); `429` a turn less than 5 s ago, more than 20 in an hour, or one still running; `503` the brain can't be reached or didn't answer (nothing is claimed). `reply` is plain text, ≤ 2000 chars, control characters stripped; clients render it as escaped text |
+| GET | `/api/daily-close` | DailyClose \| null: the latest note the brain wrote for Home |
+| POST | `/api/daily-close` | the brain writes today's close now → DailyClose; `429` one was written less than 10 min ago; `503` brain unreachable; `502` the brain's note named a number its tools didn't confirm (discarded, nothing stored) |
 | GET | `/api/health` | liveness + sandbox count — `{ "status": "ok", "sandboxes_live": 0 }` |
 
 All `/api/*` routes, including `/api/health`, require the bearer device token; a missing or wrong token is `401`.
 
 ## 4. MCP tools (Warden → brain)
-`custody.hand_over(text)`, `custody.list(status?)`, `custody.get(id)`, `custody.let_go(id)`, `custody.record_outcome(id, came_true)`, `custody.ask_peer(peer_id, q)`, `custody.ledger()`.
+`custody.hand_over(text)`, `custody.list(status?)`, `custody.get(id)`, `custody.let_go(id)`, `custody.record_outcome(id, came_true)`, `custody.ask_peer(peer_id, q)`, `custody.ledger()`, `custody.today()`.
+
+`today()` → DayNumbers `{ date, checks_run, alerts_sent, needed_you, watching: [{ id, text }] }`: for today (local day, `WARDEN_TZ`, default Europe/Berlin), from stored check results and timeline events, test worries excluded. `needed_you` = worries with an `act_now` or `failed` event today. The daily close (below) uses it.
 The brain **cannot** approve policies. Approval only ever comes from the human, in the app.
 
 **Transport (T-11):** an MCP server named `custody`, mounted on the Warden at **`/mcp/`** (Streamable
 HTTP, stateless, JSON responses), with tools `hand_over`, `list`, `get`, `let_go`,
-`record_outcome`, `ask_peer`, `ledger` (the dotted names above are `server.tool`). Auth: bearer
+`record_outcome`, `ask_peer`, `ledger`, `today` (the dotted names above are `server.tool`). Auth: bearer
 `WARDEN_MCP_TOKEN`, which must differ from the device token (`/mcp/` answers `401` without it).
 Host headers outside loopback and `WARDEN_MCP_ALLOWED_HOSTS` get `421`. Each tool dispatches
 in-process to the matching `/api` route, and ids must match `w_<ulid>` / `p_<ulid>` exactly.
@@ -185,7 +190,9 @@ Output: Worry fields plus the watcher's `adapters`, `permissions` (PermissionLin
 Watcher `code` and `policy_yaml` are never returned.
 
 ## 5. Ledger (`GET /api/ledger`)
-`{ worries_total, active, never_needed_you, needed_you, median_warning_lead_h, came_true_rate, came_true_by_type{}, watchers_built, sandboxes_live, endpoints_denied, peer_questions_answered, locations_shared: 0 }` (`peer_questions_answered` = entries in my question log)
+`{ worries_total, active, never_needed_you, needed_you, median_warning_lead_h, came_true_rate, came_true_by_type{}, watchers_built, sandboxes_live, endpoints_denied, peer_questions_answered, locations_shared: 0, checks_run, alerts_sent, checks_since }` (`peer_questions_answered` = entries in my question log)
+
+- `checks_run`: watcher runs whose result the scheduler stored (one row per run in the Warden's check log, any status), test worries excluded. `checks_since`: datetime of the first stored check, or `null` when none; the check log started on 2026-10-02, so earlier runs aren't counted (the app says "since …"). `alerts_sent`: `act_now` timeline events of counted worries (each one is an interruption).
 
 - **Build failures are not counted** in any total: a worry with a `failed` event that was never `approved` (a watcher paused after errors was approved, so it counts). `watchers_built` counts watchers that passed their dry run.
 - **Test worries are not counted** either: a worry with a `test` timeline event, and its watcher (not in `watchers_built`). Test peers are removed with `DELETE /api/people/{id}`, and a question log entry only exists for questions asked about me.
@@ -193,3 +200,7 @@ Watcher `code` and `policy_yaml` are never returned.
 
 - `came_true_rate`: a fraction from 0 to 1 = `needed_you / (needed_you + never_needed_you)`, i.e. of the closed worries with a known outcome, the share whose fear came true. It is `0.0` while no outcome is known; clients must then check `needed_you + never_needed_you = 0` and claim nothing (the app shows "No outcomes yet"). `came_true_by_type` uses the same unit per worry type.
 - DESIGN §6 also mentions "rules approved" and "bytes that left the friend's device". They are **deliberately not** in this response: the per-answer privacy receipt already shows the bytes, and approvals are visible per worry.
+
+## 6. Daily close (T-brain, 2 Oct)
+`DailyClose { date: "YYYY-MM-DD", text: str (≤ 400), written_at: datetime, checks_run: int, alerts_sent: int, needed_you: int }`.
+Once a day after `WARDEN_DAILY_CLOSE_AT` (default `21:00`, `WARDEN_TZ`), and on `POST /api/daily-close`, the Warden asks the brain over the loopback chat endpoint to call `custody.today()` and write 2–3 plain sentences: what it watched, how many checks ran, what needed the person. **The Warden accepts the note only if every number in it is one `today()` confirms** (or a digit of the date or a watched worry's own text); otherwise it asks once more, then stores nothing. The numbers fields are the Warden's own count at writing time. One note per date (a later one replaces it).

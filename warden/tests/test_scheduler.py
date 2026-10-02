@@ -14,7 +14,7 @@ import aiosqlite
 import pytest
 from warden.db import SCHEMA, Store
 from warden.events import EventBus
-from warden.models import Event, TimelineEvent, Watcher, Worry
+from warden.models import Event, TimelineEvent, Watcher, WatchResult, Worry
 from warden.sandbox.driver import ExecResult, SandboxHandle
 from warden.scheduler import PushKind, Scheduler
 from warden.worry_rows import parse_row, save_watcher, save_worry
@@ -452,3 +452,28 @@ async def test_reconcile_leaves_retired_watchers_alone(h: Harness) -> None:
 async def test_every_run_restores_the_approved_code_first(h: Harness) -> None:
     await h.run(result("ok"))
     assert ("write_file", SANDBOX, "/w/run.py:") in h.driver.calls
+
+
+async def test_every_stored_run_is_one_check_and_today_counts_them(h: Harness) -> None:
+    from warden.checks import day_numbers
+
+    await h.run(result("ok"), result("ok"), result("act_now", summary="Act now"))
+    checks = await h.store.checks.query()
+    assert [c["status"] for c in sorted(checks, key=lambda c: c["at"])] == ["ok", "ok", "act_now"]
+    assert {c["worry_id"] for c in checks} == {WORRY_ID}
+    assert set(checks[0]) == {"at", "worry_id", "watcher_id", "status"}  # no watched content
+    numbers = await day_numbers(h.store, h.clock.now())
+    assert numbers.checks_run == 3
+    assert numbers.alerts_sent == 1
+    assert numbers.needed_you == 1
+    assert [w.id for w in numbers.watching] == [WORRY_ID]
+
+
+async def test_a_run_after_let_go_is_not_a_check(h: Harness) -> None:
+    watcher = await h.watcher()
+    watcher.state = "retired"
+    await save_watcher(h.store, watcher)
+    await h.scheduler._apply(
+        WATCHER_ID, WatchResult.model_validate(json.loads(result("ok").stdout))
+    )
+    assert await h.store.checks.count() == 0

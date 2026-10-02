@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 # Mirrors docs/CONTRACTS.md. Keep in sync with app/src/api/schemas.ts.
 
@@ -242,6 +242,41 @@ class LedgerResponse(BaseModel):
     endpoints_denied: int
     peer_questions_answered: int
     locations_shared: Literal[0] = 0
+    checks_run: int
+    alerts_sent: int
+    checks_since: AwareDatetime | None
+
+
+class TalkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class TalkReply(BaseModel):
+    reply: str = Field(max_length=2000)
+    at: AwareDatetime
+
+
+class WatchingItem(BaseModel):
+    id: str
+    text: str
+
+
+class DayNumbers(BaseModel):
+    date: str
+    checks_run: int
+    alerts_sent: int
+    needed_you: int
+    watching: list[WatchingItem]
+
+
+class DailyClose(BaseModel):
+    date: str
+    text: str = Field(max_length=400)
+    written_at: AwareDatetime
+    checks_run: int
+    alerts_sent: int
+    needed_you: int
 
 
 class Event(BaseModel):

@@ -10,6 +10,7 @@ import {
 	typeLabel,
 } from "../lib/reassurance";
 import { href } from "../lib/router";
+import { day } from "../lib/time";
 import { useAsync, useLiveEvents } from "../lib/useAsync";
 
 // The stats wall (DESIGN §6). Every value comes straight from GET /api/ledger
@@ -126,6 +127,24 @@ function Wall({ l }: { l: LedgerResponse }) {
 							</span>
 						</>
 					)}
+				</p>
+			</section>
+
+			<section aria-label="Silence" className="mt-8">
+				<p className="text-[17px] text-ink" data-testid="silence-line">
+					<span data-field="checks_run" className="font-semibold">
+						{l.checks_run}
+					</span>{" "}
+					{l.checks_run === 1 ? "check" : "checks"},{" "}
+					<span data-field="alerts_sent" className="font-semibold">
+						{l.alerts_sent}
+					</span>{" "}
+					{l.alerts_sent === 1 ? "interruption" : "interruptions"}
+				</p>
+				<p className="mt-1 text-sm text-faint">
+					{l.checks_since
+						? `Counted since ${day(l.checks_since)}.`
+						: "No checks counted yet."}
 				</p>
 			</section>
 

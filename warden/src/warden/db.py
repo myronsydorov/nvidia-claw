@@ -60,6 +60,16 @@ CREATE TABLE IF NOT EXISTS seen_nonces (
     ts TEXT NOT NULL,
     data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS checks (
+    id TEXT PRIMARY KEY,
+    at TEXT NOT NULL,
+    worry_id TEXT NOT NULL,
+    data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS daily_close (
+    date TEXT PRIMARY KEY,
+    data TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS push_subscriptions (
     endpoint TEXT PRIMARY KEY,
     data TEXT NOT NULL
@@ -161,6 +171,10 @@ class Store:
         # Held around every read-modify-write of a worry/watcher pair, by the routes and the
         # scheduler alike, so a let-go can't interleave with a scheduler run (and vice versa).
         self.write_lock = asyncio.Lock()
+        # One row per stored watcher run {id, at, worry_id, watcher_id, status} (CONTRACTS §5:
+        # checks_run; started 2026-10-02), and the brain's daily notes (CONTRACTS §6).
+        self.checks = JsonStore(conn, "checks", "id", ("at", "worry_id"))
+        self.daily_close = JsonStore(conn, "daily_close", "date")
 
     async def sandboxes_live(self) -> int:
         # A paused watcher keeps its sandbox (T-10), so it still counts as live.

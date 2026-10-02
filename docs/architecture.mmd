@@ -1,0 +1,16 @@
+flowchart LR
+  phone["Custody app (PWA)<br/>phone, tailnet only"] -- "/api (device token)" --> warden
+  subgraph host["NemoClaw host"]
+    brain["OpenClaw brain<br/>own OpenShell sandbox"]
+    warden["Warden (FastAPI + SQLite)<br/>compiler · scheduler · reassurance"]
+    w1["watcher sandbox cw-…<br/>GET api.open-meteo.com/v1/forecast"]
+    w2["watcher sandbox cw-…<br/>GET www.githubstatus.com/…"]
+    relay[("relay<br/>ciphertext only")]
+    warden <-- "loopback chat (Talk, daily close)<br/>MCP tools back (no approve tool)" --> brain
+    warden -- "openshell: create · policy · exec" --> w1 & w2
+    warden <-- "X25519 crypto_box" --> relay
+  end
+  nim["NVIDIA Build · Nemotron (hosted)<br/>triage + codegen"] <--> warden
+  w1 -. "only declared GETs" .-> internet["public APIs"]
+  w2 -.-> internet
+  relay <-- "tailnet" --> anna["Anna's Warden + app<br/>(her Mac)"]

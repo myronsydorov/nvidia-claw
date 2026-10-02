@@ -296,6 +296,9 @@ describe("ledgerResponseSchema", () => {
 			endpoints_denied: 0,
 			peer_questions_answered: 0,
 			locations_shared: 0,
+			checks_run: 0,
+			alerts_sent: 0,
+			checks_since: null,
 		};
 		expect(ledgerResponseSchema.safeParse(ledger).success).toBe(true);
 		expect(

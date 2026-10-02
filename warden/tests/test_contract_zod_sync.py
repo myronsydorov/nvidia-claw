@@ -46,6 +46,9 @@ MODELS: dict[str, type[BaseModel]] = {
     "SharingRulesResponse": models.SharingRulesResponse,
     "PushSubscription": models.PushSubscription,
     "LedgerResponse": models.LedgerResponse,
+    "TalkRequest": models.TalkRequest,
+    "TalkReply": models.TalkReply,
+    "DailyClose": models.DailyClose,
     "Event": models.Event,
 }
 

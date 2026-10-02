@@ -30,6 +30,9 @@ const modelToSchema: Record<string, z.ZodType> = {
 	SharingRulesResponse: schemas.sharingRulesResponseSchema,
 	PushSubscription: schemas.pushSubscriptionSchema,
 	LedgerResponse: schemas.ledgerResponseSchema,
+	TalkRequest: schemas.talkRequestSchema,
+	TalkReply: schemas.talkReplySchema,
+	DailyClose: schemas.dailyCloseSchema,
 	Event: schemas.eventSchema,
 };
 

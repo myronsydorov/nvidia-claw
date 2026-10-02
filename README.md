@@ -15,18 +15,18 @@ Docs: [`docs/DESIGN.md`](docs/DESIGN.md) · [`docs/CONTRACTS.md`](docs/CONTRACTS
 flowchart LR
   phone["Custody app (PWA)<br/>phone, tailnet only"] -- "/api (device token)" --> warden
   subgraph host["NemoClaw host"]
-    warden["Warden (FastAPI + SQLite)<br/>compiler · scheduler · reassurance"]
     brain["OpenClaw brain<br/>own OpenShell sandbox"]
+    warden["Warden (FastAPI + SQLite)<br/>compiler · scheduler · reassurance"]
     w1["watcher sandbox cw-…<br/>GET api.open-meteo.com/v1/forecast"]
     w2["watcher sandbox cw-…<br/>GET www.githubstatus.com/…"]
     relay[("relay<br/>ciphertext only")]
-    brain -- "MCP tools (no approve tool)" --> warden
+    warden <-- "loopback chat (Talk, daily close)<br/>MCP tools back (no approve tool)" --> brain
     warden -- "openshell: create · policy · exec" --> w1 & w2
+    warden <-- "X25519 crypto_box" --> relay
   end
-  warden -- "triage + codegen" --> nim["NVIDIA Build<br/>Nemotron (hosted)"]
+  nim["NVIDIA Build · Nemotron (hosted)<br/>triage + codegen"] <--> warden
   w1 -. "only declared GETs" .-> internet["public APIs"]
   w2 -.-> internet
-  warden <-- "X25519 crypto_box" --> relay
   relay <-- "tailnet" --> anna["Anna's Warden + app<br/>(her Mac)"]
 ```
 How a worry is handled: **triage** (fast Nemotron) → **codegen** (Nemotron Super writes `run.py` against a fixed adapter library) → **AST gate** → **policy generated from the adapters' declared endpoints** (GET-only, no wildcards) → **dry run** in a throwaway sandbox → **your approval** in the app → the watcher runs in its own sandbox on a schedule. Output is parsed as JSON only: `ok` stays silent, and `act_now` produces one alert card with evidence.
@@ -56,7 +56,7 @@ Open http://127.0.0.1:5173. On first run, `make dev` creates `.env` and writes a
 ## What is real, what is simulated, what is cut
 | | State |
 |---|---|
-| **Real, deployed** | A NemoClaw host (DigitalOcean, Ubuntu 24.04) served to the owner's phone over Tailscale only. Live Nemotron triage and codegen through NVIDIA Build. **One OpenShell sandbox per running watcher**, created from the generated policy the person approved. The owner's real worries are being watched now (a school calendar, rain, GitHub status). |
+| **Real, deployed** | A NemoClaw host (DigitalOcean, Ubuntu 24.04) served to the owner's phone over Tailscale only. Live Nemotron triage and codegen through NVIDIA Build. **One OpenShell sandbox per running watcher**, created from the generated policy the person approved. The owner's real worries are being watched now (rain, GitHub status). A school-calendar watcher also runs, but it was a system test and is marked as one, so the ledger doesn't count it. |
 | **Real, proven** | **A denied request in OpenShell's own audit log** (`scripts/demo-evidence.sh`). An `act_now` from a real sandbox reaching the app as one alert card, then "Did it happen?" (on a separate test Warden, removed afterwards). **"Is Anna OK?" end to end** between two Wardens on the host: pairing code, matching 8-digit fingerprints, sharing rules, answer in 0.9 s, privacy receipt, 10-minute cooldown, and the relay DB holding only ciphertext. The brain (OpenClaw in its own sandbox) handing a worry to the Warden over MCP. |
 | **Simulated** | `make dev` uses mock sandboxes and, without a key, recorded model answers. The second person's Warden on a Mac runs **no sandbox**: it builds no watchers, it only answers ([`docs/ANNA_SETUP.md`](docs/ANNA_SETUP.md) states what proves privacy there and what doesn't). |
 | **Not measured yet** | In the Ledger, *endpoints denied*, *median warning lead* and *came true by type* are shown as not counted, never as a fake zero. |
@@ -82,4 +82,4 @@ Watched content is data, never instructions: it's parsed as JSON, and it passes 
   - Between people, agents exchange **private reassurance** with a fixed vocabulary and end-to-end encryption, instead of sharing location.
 - **Real-world value.**
   - It's built against anxious reassurance-seeking: silence by default, no "check again" loops, a 10-minute cooldown on asking, one question at the end ("did it happen?").
-  - The ledger shows *your* rate of worries that came true. Its owner used it on real worries during the challenge week: a school-calendar change, rain during an outdoor shoot, GitHub on deadline night, and an S-Bahn commute.
+  - The ledger shows *your* rate of worries that came true. Its owner used it on real worries during the challenge week: rain during an outdoor shoot, GitHub on deadline night, and an S-Bahn commute.

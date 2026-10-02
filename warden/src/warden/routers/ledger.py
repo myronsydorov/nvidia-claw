@@ -1,21 +1,12 @@
-from typing import Any
+from datetime import datetime
 
 from fastapi import APIRouter, Request
 
+from warden.checks import counted_checks, is_build_failure, is_test
 from warden.models import LedgerResponse
 from warden.state import get_store
 
 router = APIRouter()
-
-
-def is_build_failure(row: dict[str, Any]) -> bool:
-    kinds = {event["kind"] for event in row["timeline"]}
-    return row["worry"]["status"] == "failed" or ("failed" in kinds and "approved" not in kinds)
-
-
-def is_test(row: dict[str, Any]) -> bool:
-    """Created to test the system (scripts/mark_test_worry.py), not one of the person's worries."""
-    return any(event["kind"] == "test" for event in row["timeline"])
 
 
 @router.get("/api/ledger")
@@ -37,7 +28,15 @@ async def get_ledger(request: Request) -> LedgerResponse:
         elif came_true is False:
             never_needed_you += 1
 
+    # Silence as a number (CONTRACTS §5): stored runs only; the log started on 2026-10-02.
+    checks = await counted_checks(store, test_ids)
+    first = min((c["at"] for c in checks), default=None)
+    alerts_sent = sum(1 for r in counted for e in r["timeline"] if e["kind"] == "act_now")
+
     return LedgerResponse(
+        checks_run=len(checks),
+        alerts_sent=alerts_sent,
+        checks_since=datetime.fromisoformat(first) if first else None,
         worries_total=len(counted),
         active=sum(1 for r in counted if r["worry"]["status"] == "watching"),
         never_needed_you=never_needed_you,

@@ -13,6 +13,7 @@ import {
 	initialQuestionLog,
 	initialRules,
 	mockAnswer,
+	mockDailyClose,
 	mockPeer,
 } from "../mocks/people";
 import { createEventStream, type Listener } from "./events";
@@ -20,6 +21,7 @@ import { ApiError, createHttpApi } from "./http";
 import {
 	type AskPeerResponse,
 	askPeerResponseSchema,
+	type DailyClose,
 	type LedgerResponse,
 	type PairingStartResponse,
 	type PairingStatusResponse,
@@ -33,6 +35,7 @@ import {
 	type ReassuranceQuestion,
 	type SharingRulesResponse,
 	sharingRulesResponseSchema,
+	type TalkReply,
 	type WorryDetail,
 	type WorrySummary,
 	worryDetailSchema,
@@ -82,6 +85,11 @@ export interface Api {
 	checkIn(): Promise<void>;
 	/** Set or clear "I need help". */
 	setHelp(on: boolean): Promise<void>;
+	/** One turn with Custody's brain (POST /api/talk). Rejects with an ApiError: 422 the
+	 *  text has a link (use Hand over), 429 too fast, 503 the brain can't be reached. */
+	talk(text: string): Promise<TalkReply>;
+	/** The latest note the brain wrote for Home, or null (GET /api/daily-close). */
+	getDailyClose(): Promise<DailyClose | null>;
 	/** Live updates (GET /api/events). Returns an unsubscribe function. */
 	subscribe(listener: Listener): () => void;
 }
@@ -354,6 +362,20 @@ export function createMockApi(latencyMs = 250): Api {
 		async getLedger() {
 			await wait(latencyMs);
 			return initialLedger();
+		},
+		async talk(text) {
+			await wait(latencyMs * 4);
+			if (/https?:|www\.|\b[a-z0-9-]+\.[a-z]{2,}\b/i.test(text))
+				throw new ApiError(422, "link");
+			return {
+				reply:
+					"I'm watching 3 worries. They're quiet because every check so far came back fine; the watcher will tell you if you need to act.",
+				at: new Date().toISOString(),
+			};
+		},
+		async getDailyClose() {
+			await wait(latencyMs);
+			return mockDailyClose();
 		},
 		async mySignal() {
 			await wait(latencyMs);

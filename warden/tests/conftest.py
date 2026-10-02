@@ -21,6 +21,8 @@ def warden_test_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)  # never a live model call from a test
     monkeypatch.delenv("RELAY_URL", raising=False)  # no relay unless a test brings its own
     monkeypatch.delenv("CUSTODY_CALENDAR_ICS", raising=False)
+    monkeypatch.delenv("OPENCLAW_GATEWAY_URL", raising=False)  # never the real brain
+    monkeypatch.delenv("OPENCLAW_GATEWAY_TOKEN", raising=False)
     monkeypatch.setenv("CUSTODY_ACTIVITY", "off")  # never read this machine's idle time
 
     async def public_only(host: str, port: int) -> list[str]:

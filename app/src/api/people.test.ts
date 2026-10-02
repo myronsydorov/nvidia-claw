@@ -6,6 +6,7 @@ import {
 	initialPeople,
 	initialQuestionLog,
 	initialRules,
+	mockDailyClose,
 } from "../mocks/people";
 import { createMockApi } from "./client";
 import type { Listener } from "./events";
@@ -274,5 +275,34 @@ describe("http api: people, sharing, ledger (CONTRACTS §3)", () => {
 		expect(calls[0]?.url).toBe("/api/ledger");
 		const bad = recording({ ...initialLedger(), locations_shared: 1 });
 		await expect(bad.api.getLedger()).rejects.toThrow();
+	});
+
+	it("POST /api/talk sends only the text and parses the reply", async () => {
+		const reply = { reply: "<b>2</b> worries", at: "2026-10-02T11:00:00Z" };
+		const { api, calls } = recording(reply);
+		expect(await api.talk("What are you watching?")).toEqual(reply);
+		expect(`${calls[0]?.method} ${calls[0]?.url}`).toBe("POST /api/talk");
+		expect(calls[0]?.body).toEqual({ text: "What are you watching?" });
+	});
+
+	it.each([422, 429, 503])(
+		"surfaces talk status %i as an ApiError",
+		async (status) => {
+			const api = createHttpApi({
+				getToken: () => "tok",
+				onUnauthorized: () => {},
+				events: noEvents,
+				fetchImpl: async () => json({ detail: "x" }, status),
+			});
+			await expect(api.talk("hi")).rejects.toMatchObject({ status });
+		},
+	);
+
+	it("GET /api/daily-close: a note or null", async () => {
+		const note = mockDailyClose();
+		expect(await recording(note).api.getDailyClose()).toEqual(note);
+		expect(await recording(null).api.getDailyClose()).toBeNull();
+		const long = recording({ ...note, text: "x".repeat(401) });
+		await expect(long.api.getDailyClose()).rejects.toThrow();
 	});
 });

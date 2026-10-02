@@ -5,7 +5,7 @@ import { Orb, Screen, SectionLabel } from "../components/ui";
 import { evidenceRows } from "../lib/evidence";
 import { sourceLabel, statusLabel } from "../lib/labels";
 import { href, navigate } from "../lib/router";
-import { ago } from "../lib/time";
+import { ago, day } from "../lib/time";
 import { useAsync, useLiveEvents } from "../lib/useAsync";
 
 function subline(items: WorrySummary[]): string {
@@ -50,6 +50,26 @@ function WorryRow({ item }: { item: WorrySummary }) {
 				</span>
 			</a>
 		</li>
+	);
+}
+
+/** The brain's note for the day (CONTRACTS §6). Escaped text, numbers checked by the Warden. */
+function DailyCloseCard() {
+	const close = useAsync(() => api.getDailyClose(), "daily-close");
+	if (close.state !== "ready" || !close.data) return null;
+	return (
+		<section className="mb-8 animate-rise" aria-label="Today, in short">
+			<SectionLabel>Today, in short</SectionLabel>
+			<p
+				data-testid="daily-close"
+				className="text-[16px] leading-relaxed whitespace-pre-line text-ink"
+			>
+				{close.data.text}
+			</p>
+			<p className="mt-2 text-sm text-faint">
+				Written by Custody at {day(close.data.written_at)}
+			</p>
+		</section>
 	);
 }
 
@@ -173,6 +193,12 @@ export function Home() {
 				className="-mr-2 flex justify-end gap-1 text-sm text-muted"
 			>
 				<a
+					href={href({ name: "talk" })}
+					className="rounded-full px-3 py-2 transition-colors hover:text-ink"
+				>
+					Talk
+				</a>
+				<a
 					href={href({ name: "people" })}
 					className="rounded-full px-3 py-2 transition-colors hover:text-ink"
 				>
@@ -206,6 +232,7 @@ export function Home() {
 				</section>
 			)}
 			<WorryGroup label="In custody" items={held} />
+			<DailyCloseCard />
 			<WorryGroup label="For worry time" items={parked} />
 
 			<MindInput />

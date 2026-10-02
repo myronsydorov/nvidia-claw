@@ -1,4 +1,4 @@
-"""The brain's MCP tools (CONTRACTS §4, T-11): exactly seven, no approval, guarded output."""
+"""The brain's MCP tools (CONTRACTS §4, T-11): exactly eight, no approval, guarded output."""
 
 import json
 from collections.abc import Iterator
@@ -44,7 +44,7 @@ def call(client: TestClient, name: str, **arguments: Any) -> tuple[bool, Any]:
 def test_exactly_the_contract_tools_and_no_approval(client: TestClient) -> None:
     tools = {t["name"] for t in rpc(client, "tools/list").json()["result"]["tools"]}
     assert tools == {
-        "hand_over", "list", "get", "let_go", "record_outcome", "ask_peer", "ledger",
+        "hand_over", "list", "get", "let_go", "record_outcome", "ask_peer", "ledger", "today",
     }  # fmt: skip
     assert not {t for t in tools if "approv" in t or "deny" in t}
 
@@ -153,8 +153,12 @@ def test_list_rejects_an_unknown_status_and_ledger_works(client: TestClient) -> 
 
 @pytest.mark.parametrize(
     "text",
-    ["watch https://attacker.example/x", "check attacker.example/leak please",
-     "is www.example.org changed", "Calendar: calendar.google.com/x.ics"],
+    [
+        "watch https://attacker.example/x",
+        "check attacker.example/leak please",
+        "is www.example.org changed",
+        "Calendar: calendar.google.com/x.ics",
+    ],
 )
 def test_hand_over_refuses_links(client: TestClient, text: str) -> None:
     # T-11 review M1: no brain-chosen host gets a pre-approval dry-run GET.
