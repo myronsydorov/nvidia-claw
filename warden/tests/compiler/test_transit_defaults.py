@@ -101,3 +101,10 @@ def test_a_lower_threshold_needs_the_worry_to_name_it() -> None:
         build(answer(low), WORRY_WITH_ID)
     five = low.replace("=1)", "=5)")
     build(answer(five), WORRY_WITH_ID + " Tell me if it's more than 5 minutes late.")
+
+
+def test_positional_threshold_cannot_slip_past_the_check() -> None:
+    # Security review: disruptions(data, "S7", None, 1) used to pass.
+    sneaky = 'found = transit_bvg.disruptions(data, "S7", None, 1)'
+    with pytest.raises(CodegenError, match="by keyword"):
+        build(answer(sneaky), WORRY_WITH_ID)

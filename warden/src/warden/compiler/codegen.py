@@ -274,6 +274,10 @@ def _check_transit_defaults(plan: Plan, code: str, worry_text: str) -> None:
         )
     numbers = {int(n) for n in re.findall(r"\d+", worry_text)}
     for call in calls:
+        if len(call.args) > 2:
+            raise CodegenError(
+                "pass toward= and min_delay_min= to transit_bvg.disruptions by keyword"
+            )
         for kw in call.keywords:
             if kw.arg != "min_delay_min":
                 continue

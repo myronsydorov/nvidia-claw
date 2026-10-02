@@ -21,7 +21,7 @@ def test_declare_builds_one_exact_departures_path() -> None:
     assert adapter.secrets == []
 
 
-@pytest.mark.parametrize("stop_id", ["", "abc", "123abc", "900000100003;drop"])
+@pytest.mark.parametrize("stop_id", ["", "abc", "123abc", "900000100003;drop", "900120003\n"])
 def test_declare_rejects_non_numeric_stop_ids(stop_id: str) -> None:
     with pytest.raises(ValueError, match="numeric"):
         declare(stop_id=stop_id, why=_EXAMPLE_WHY)

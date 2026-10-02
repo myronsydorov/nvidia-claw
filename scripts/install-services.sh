@@ -72,4 +72,8 @@ serve() {
 # can reach it. Tailnet only, like the rest; the relay stores ciphertext only (THREAT_MODEL A6).
 serve /api http://127.0.0.1:8000/api && serve /relay http://127.0.0.1:8100 \
   && serve / http://127.0.0.1:8300 && sudo tailscale serve status
+# Never Funnel (THREAT_MODEL A5/A6): the relay has no mailbox auth, the app and API are private.
+if sudo tailscale funnel status 2>/dev/null | grep -q 'Funnel on'; then
+  echo "STOP: tailscale Funnel is on; turn it off (sudo tailscale funnel reset)"; exit 1
+fi
 echo "done. Device token: grep WARDEN_DEVICE_TOKEN $CONF/warden.env"

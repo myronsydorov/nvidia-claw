@@ -11,11 +11,11 @@ import re
 from warden.adapters.base import Adapter, Endpoint
 
 _HOST = "v6.bvg.transport.rest"
-_STOP_ID_PATTERN = re.compile(r"^[0-9]+$")
+_STOP_ID_PATTERN = re.compile(r"[0-9]+")
 
 
 def declare(*, stop_id: str, why: str = "check departures for this stop") -> Adapter:
-    if not _STOP_ID_PATTERN.match(stop_id):
+    if not _STOP_ID_PATTERN.fullmatch(stop_id):  # `$` would let a trailing newline through
         raise ValueError(f"stop_id must be numeric, got {stop_id!r}")
     return Adapter(
         name="transit_bvg",
