@@ -153,8 +153,8 @@ function Wall({ l }: { l: LedgerResponse }) {
 								{pct(l.came_true_rate)}
 							</span>{" "}
 							of your {known} worries with a known outcome. For comparison,
-							research (Penn State, LaFreniere &amp; Newman, 2019, 29 people
-							with anxiety): 91.4% of their worries didn't come true.
+							research (Penn State, LaFreniere &amp; Newman, 2019, people
+							with generalized anxiety): 91.4% of their worries didn't come true.
 						</p>
 					</>
 				)}
