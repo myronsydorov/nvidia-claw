@@ -116,7 +116,7 @@ def build_server(app: FastAPI) -> MCPServer:
         body = response.json()
         watcher = body.get("watcher")
         worry = _guard_worry(body["worry"])
-        worry["test"] = any(e["kind"] == "test" for e in body["timeline"])
+        worry["test"] = any(e["kind"] == "test" for e in body.get("timeline", []))
         return {
             "worry": worry,
             "watcher": None if watcher is None else {

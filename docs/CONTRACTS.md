@@ -187,7 +187,7 @@ in-process to the matching `/api` route, and ids must match `w_<ulid>` / `p_<uli
 Output: Worry fields plus `test` (bool: a worry marked as a system test, CONTRACTS §5; the brain never counts it or presents it as the person's) plus the watcher's `adapters`, `permissions` (PermissionLine list), `state`,
 `interval_s` and `last_result`. `last_result` passes through `guard.guard_watch_result`
 (`evidence.data` dropped). Timeline texts and `resolution` are wrapped as `<untrusted_data>`.
-Watcher `code` and `policy_yaml` are never returned.
+Watcher `code` and `policy_yaml` are never returned. Two read-only exceptions to "dispatches to an /api route": `today` and the `test` flag in `list` read the Warden's store directly (counts, ids and event kinds only).
 
 ## 5. Ledger (`GET /api/ledger`)
 `{ worries_total, active, never_needed_you, needed_you, median_warning_lead_h, came_true_rate, came_true_by_type{}, watchers_built, sandboxes_live, endpoints_denied, peer_questions_answered, locations_shared: 0, checks_run, alerts_sent, checks_since }` (`peer_questions_answered` = entries in my question log)
