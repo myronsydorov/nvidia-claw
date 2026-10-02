@@ -191,6 +191,9 @@ class Reassurance:
         self._poll_s = poll_s
         self._waiting: dict[str, _Waiter] = {}
         self._poll_lock = asyncio.Lock()
+        # Saving the peer and marking its pairing done are two writes; a status read between
+        # them saw "waiting" with the peer already listed (flaky L2 test, 2026-10-01).
+        self._pairing_lock = asyncio.Lock()
         self._ask_locks: dict[str, asyncio.Lock] = {}
 
     @property
@@ -284,6 +287,10 @@ class Reassurance:
         return PairingStartResponse(pairing_id=pairing_id, code=code, expires_at=expires_at)
 
     async def pairing_status(self, pairing_id: str) -> PairingStatusResponse:
+        async with self._pairing_lock:
+            return await self._pairing_status(pairing_id)
+
+    async def _pairing_status(self, pairing_id: str) -> PairingStatusResponse:
         now = self._now()
         for row in await self._store.pairings.query():
             if row.get("pairing_id") != pairing_id:
@@ -433,10 +440,13 @@ class Reassurance:
                 continue  # already used, or expired
             expected = crypto.pairing_proof(bytes.fromhex(row["key"]), self.public_key, joiner)
             if crypto.proof_matches(expected, accept.proof):
-                peer = await self._save_peer(accept.public_key, row["display_name"], accept.nonce)
-                # One-time: the key is dropped; the row only remembers the outcome.
-                done = {k: v for k, v in row.items() if k != "key"}
-                await self._store.pairings.put(row["mailbox_id"], {**done, "peer_id": peer.id})
+                async with self._pairing_lock:
+                    peer = await self._save_peer(
+                        accept.public_key, row["display_name"], accept.nonce
+                    )
+                    # One-time: the key is dropped; the row only remembers the outcome.
+                    done = {k: v for k, v in row.items() if k != "key"}
+                    await self._store.pairings.put(row["mailbox_id"], {**done, "peer_id": peer.id})
                 log.info("pairing completed")
                 return
         log.info("dropped a pairing accept with no live pairing")

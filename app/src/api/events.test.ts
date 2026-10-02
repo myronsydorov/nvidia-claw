@@ -45,12 +45,17 @@ function sseResponse(chunks: string[]): Response {
 	return new Response(body, { status: 200 });
 }
 
-const tick = () => new Promise((r) => setTimeout(r, 5));
-// Polls instead of sleeping a fixed time, so a busy CI box can't starve the reconnect loop.
-const until = async (cond: () => boolean, timeoutMs = 1000) => {
-	const end = Date.now() + timeoutMs;
-	while (!cond() && Date.now() < end) await tick();
-};
+// Every wait is event-driven: a test resumes when the stream's own callback says the
+// condition holds, never after a fixed sleep or a wall-clock timeout, so a busy CI box
+// can only make it slower, not red. (Vitest's per-test timeout is the only bound.)
+function latch() {
+	let open: () => void = () => {};
+	const done = new Promise<void>((resolve) => {
+		open = resolve;
+	});
+	return { open, done };
+}
+const macrotask = () => new Promise((r) => setTimeout(r, 0));
 
 describe("createEventStream", () => {
 	it("sends the bearer token, emits events and reconnects after the stream ends", async () => {
@@ -67,8 +72,12 @@ describe("createEventStream", () => {
 			backoffMs: () => 0,
 		});
 		const seen: LiveEvent[] = [];
-		const off = stream.subscribe((e) => seen.push(e));
-		await until(() => calls.length >= 2 && seen.length >= 3);
+		const three = latch();
+		const off = stream.subscribe((e) => {
+			seen.push(e);
+			if (seen.length === 3) three.open();
+		});
+		await three.done;
 		off();
 
 		expect(calls.length).toBeGreaterThanOrEqual(2); // it reconnected
@@ -85,11 +94,13 @@ describe("createEventStream", () => {
 	it("stops and reports on 401", async () => {
 		let unauthorized = 0;
 		let calls = 0;
+		const reported = latch();
 		const stream = createEventStream({
 			url: "/api/events",
 			getToken: () => "bad",
 			onUnauthorized: () => {
 				unauthorized += 1;
+				reported.open();
 			},
 			fetchImpl: async () => {
 				calls += 1;
@@ -98,7 +109,9 @@ describe("createEventStream", () => {
 			backoffMs: () => 0,
 		});
 		const off = stream.subscribe(() => {});
-		await tick();
+		await reported.done;
+		// A retry would need at least one more (zero-delay) timer turn; give it several.
+		for (let i = 0; i < 5; i++) await macrotask();
 		off();
 		expect(calls).toBe(1);
 		expect(unauthorized).toBe(1);
@@ -106,6 +119,7 @@ describe("createEventStream", () => {
 
 	it("keeps backing off when the stream drops straight after connecting", async () => {
 		const attempts: number[] = [];
+		const three = latch();
 		const stream = createEventStream({
 			url: "/api/events",
 			getToken: () => "tok",
@@ -113,11 +127,12 @@ describe("createEventStream", () => {
 			fetchImpl: async () => sseResponse([]),
 			backoffMs: (n) => {
 				attempts.push(n);
+				if (attempts.length === 3) three.open();
 				return 0;
 			},
 		});
 		const off = stream.subscribe(() => {});
-		await until(() => attempts.length >= 3);
+		await three.done;
 		off();
 		expect(attempts.slice(0, 3)).toEqual([0, 1, 2]);
 	});
@@ -125,6 +140,7 @@ describe("createEventStream", () => {
 	it("backs off and retries after a network error", async () => {
 		const attempts: number[] = [];
 		let calls = 0;
+		const three = latch();
 		const stream = createEventStream({
 			url: "/api/events",
 			getToken: () => "tok",
@@ -135,11 +151,12 @@ describe("createEventStream", () => {
 			},
 			backoffMs: (n) => {
 				attempts.push(n);
+				if (attempts.length === 3) three.open();
 				return 0;
 			},
 		});
 		const off = stream.subscribe(() => {});
-		await until(() => calls >= 3 && attempts.length >= 3);
+		await three.done;
 		off();
 		expect(calls).toBeGreaterThanOrEqual(3);
 		expect(attempts.slice(0, 3)).toEqual([0, 1, 2]);
