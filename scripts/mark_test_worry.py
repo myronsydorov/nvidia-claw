@@ -33,6 +33,7 @@ def main() -> int:
         print("already marked")
         return 0
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    os.umask(0o077)  # the backup is a full copy of the DB: never readable by others
     backup = sqlite3.connect(f"{db}.bak-{stamp}-mark-test")
     conn.backup(backup)
     backup.close()

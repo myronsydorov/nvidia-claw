@@ -6,17 +6,18 @@ cd "$(dirname "$0")/.."
 umask 077
 [ -f .env ] || { cp .env.example .env; echo "created .env from .env.example"; }
 if ! grep -qE '^WARDEN_DEVICE_TOKEN=.+' .env; then
-  token=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
-  if grep -q '^WARDEN_DEVICE_TOKEN=' .env; then
-    python3 - "$token" <<'PY'
-import sys, pathlib
+  # Generated and written inside Python: the token never appears on a command line.
+  python3 - <<'PY'
+import pathlib, secrets
 p = pathlib.Path(".env")
-lines = [f"WARDEN_DEVICE_TOKEN={sys.argv[1]}" if l.startswith("WARDEN_DEVICE_TOKEN=") else l
-         for l in p.read_text().splitlines()]
+line = f"WARDEN_DEVICE_TOKEN={secrets.token_urlsafe(32)}"
+lines = p.read_text().splitlines()
+if any(l.startswith("WARDEN_DEVICE_TOKEN=") for l in lines):
+    lines = [line if l.startswith("WARDEN_DEVICE_TOKEN=") else l for l in lines]
+else:
+    lines.append(line)
 p.write_text("\n".join(lines) + "\n")
 PY
-  else
-    echo "WARDEN_DEVICE_TOKEN=$token" >> .env
-  fi
   echo "wrote a new device token into .env (WARDEN_DEVICE_TOKEN): paste it into the app"
 fi
+chmod 600 .env

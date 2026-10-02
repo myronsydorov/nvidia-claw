@@ -146,8 +146,12 @@ async def denial(driver: OpenShellDriver, pick: dict) -> None:  # type: ignore[t
         else:
             bad("no DENIED line for example.com")
     finally:
-        await driver.delete(name)
-        print(f"  {DIM}{name} deleted{OFF}")
+        try:
+            await driver.delete(name)
+            print(f"  {DIM}{name} deleted{OFF}")
+        except Exception as exc:
+            bad(f"could not delete the probe sandbox ({type(exc).__name__}): "
+                f"run  openshell sandbox delete {name}")  # fmt: skip
 
 
 def brain() -> None:
