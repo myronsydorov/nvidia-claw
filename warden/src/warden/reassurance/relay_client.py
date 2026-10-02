@@ -2,6 +2,7 @@
 
 import base64
 import json
+import logging
 from dataclasses import dataclass
 
 import httpx2 as httpx
@@ -17,6 +18,19 @@ class _Item(BaseModel):
 
 
 _MAILBOX = TypeAdapter(list[_Item])
+
+
+class _QuietPolls(logging.Filter):
+    """The poller reads its mailbox every 2 s; httpx2 logged each read at INFO (~43k journal
+    lines a day, which buried the BVG 503s on 2 Oct). Successful polls are dropped; failed
+    ones and every POST still log."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not ("GET " in msg and "/v1/mailbox/" in msg and " 200 " in msg)
+
+
+logging.getLogger("httpx2").addFilter(_QuietPolls())
 
 
 @dataclass(frozen=True, slots=True)

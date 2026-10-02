@@ -449,3 +449,19 @@ async def test_unpairing_during_an_ask_does_not_bring_the_peer_back(pair: Pair) 
 async def test_confirm_an_unknown_peer_is_an_error(pair: Pair) -> None:
     with pytest.raises(PeerNotFound):
         await pair.alice.service.confirm("p_01K6C0NKNWN0000000000000099")
+
+
+def test_successful_mailbox_polls_are_not_logged(caplog: pytest.LogCaptureFixture) -> None:
+    import logging
+
+    import warden.reassurance.relay_client  # noqa: F401  (installs the filter)
+
+    httpx_log = logging.getLogger("httpx2")
+    with caplog.at_level(logging.INFO, logger="httpx2"):
+        poll = 'HTTP Request: GET http://127.0.0.1:8100/v1/mailbox/%s?since=0 "HTTP/1.1 200 OK"'
+        httpx_log.info(poll, "e00d3efe11905c1878ff3a37f4c6ea14")
+        httpx_log.info('HTTP Request: GET http://r/v1/mailbox/x "HTTP/1.1 503 Service Unavailable"')
+        httpx_log.info('HTTP Request: POST http://r/v1/mailbox/x "HTTP/1.1 202 Accepted"')
+    messages = [r.getMessage() for r in caplog.records]
+    assert not any("200 OK" in m for m in messages)
+    assert any("503" in m for m in messages) and any("POST" in m for m in messages)
