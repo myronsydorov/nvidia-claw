@@ -17,6 +17,7 @@ _(filled in at the end of the session)_
 | 7 | Alert path | **done**: the app had no alert card and never asked "did it happen?"; both built, then proven end to end with a real sandbox on a separate TEST Warden, which was then removed |
 | 8 | Ledger truth | **done**: real numbers below; the T-11 test worry is no longer counted; unmeasured tiles are labelled; 91.4% is labelled research |
 | 9 | App polish | **done** (desktop-verified): status-bar strip, PNG home-screen icons + manifest, names keep capitals, 2 wording fixes; dark + light, no console errors. **Check on the iPhone** (Needs Myron) |
+| 10 | Evidence script | **done**: `scripts/demo-evidence.sh`, 5 sections all ✔ live, ~25 s |
 
 ### 1. The 08:17 stop lookup failure: BVG's public API was down
 Warden log (journal, UTC; 08:17 Berlin = 06:17 UTC). Three hand-overs, each one BVG lookup, each `503`:
@@ -126,6 +127,16 @@ A clearly labelled **test Warden "TEST-Anna"** ran on `127.0.0.1:8010` with its 
 - Your `/api/ledger` is unchanged.
 
 **Seen on the way, fixed in block 9:** the fear line lowercased the first letter ("The fear: open-Meteo…", the same bug as "s-Bahn").
+
+### 10. `scripts/demo-evidence.sh` (for the screen recording)
+Run on the host: `./scripts/demo-evidence.sh` (about 25 s; prints no token, key or body). Live output at 09:45 Berlin, all ✔:
+1. **Sandboxes:** `cw-76epww8s` / `cw-gnnrrs3z` / `cw-zzrsdcze` Ready, one per watching worry (school, rain, GitHub), plus `custody-brain`. "3 running watchers, 3 watcher sandboxes, all Ready, no strays".
+2. **Generated policy** of the rain watcher: one `GET api.open-meteo.com/v1/forecast` rule, `/usr/local/bin/python3.12` only, Landlock strict.
+3. **Denial:** a throwaway `cwd-proof-*` sandbox with the *same* policy asks for example.com → `ProxyError`, and OpenShell's own log shows: `NET:OPEN [MED] DENIED /usr/local/bin/python3.12(34) -> example.com:443 [policy:- engine:opa] [reason:endpoint example.com:443 is not allowed by any policy]`. The probe sandbox is deleted after, and real watchers are untouched.
+4. **Brain:** `custody-brain` Ready, nemotron-3-super-120b-a12b, inference healthy, OpenShell 0.0.116.
+5. **Relay:** 6 rows (from the block 5 test, which expire at ~07:08 UTC on 3 Oct): key ids, sizes and 6.5–7.1 bits/byte; no vocabulary word or JSON field name. **For the video, ask "Is Anna OK?" first, so the rows are fresh.**
+
+Every OpenShell call goes through the driver (AGENTS #3). The driver gained a read-only `list_sandboxes()` (tested with the fake CLI).
 
 ### 9. App polish (phone first)
 - **Status bar:**
