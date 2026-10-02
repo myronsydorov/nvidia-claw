@@ -29,7 +29,7 @@ from warden.state import get_store
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-TALK_SESSION = "custody-app"  # + the local date: one brain session per day, not forever
+TALK_SESSION = "custody-talk"  # + the local date: one brain session per day, not forever
 CLOSE_MIN_GAP_S = 600
 
 

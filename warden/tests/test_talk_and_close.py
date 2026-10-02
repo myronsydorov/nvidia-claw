@@ -88,7 +88,7 @@ def test_talk_goes_to_the_brain_and_returns_clean_text(
     assert r.status_code == 200
     assert r.json()["reply"] == "I'm watching 1 worry.[31m <script>x</script>"  # escaped by app
     session, system, text = brain.calls[0]
-    assert session.startswith("custody-app-20") and text == "What are you watching?"  # per day
+    assert session.startswith("custody-talk-20") and text == "What are you watching?"  # per day
     assert "re-check" in system and "Only claim what a tool returned" in system
 
 
