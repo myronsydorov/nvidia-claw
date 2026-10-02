@@ -231,8 +231,8 @@ export function Home() {
 					</ul>
 				</section>
 			)}
-			<WorryGroup label="In custody" items={held} />
 			<DailyCloseCard />
+			<WorryGroup label="In custody" items={held} />
 			<WorryGroup label="For worry time" items={parked} />
 
 			<MindInput />
