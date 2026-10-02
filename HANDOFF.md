@@ -12,7 +12,8 @@ _(filled in at the end of the session)_
 | 2 | Transit defaults | **done**: direction of travel + cancelled or ≥ 10 min, enforced; deployed; image rebuilt |
 | 3 | Test health | **done**: 616 Python + 87 app + e2e 2 + e2e:mock 14 all pass; "577" explained (nothing lost); events tests made event-driven; an L2 race fixed; **CI was red on every push (pnpm version) and is now green** |
 | 4 | Last night's list | done (status below); added a daily DB backup timer and a boot unit for restart.sh |
-| 5 | Layer 2 proof on this server | **done**: paired, fingerprints matched, answered in 0.88 s, rules + log + receipt + cooldown all correct, relay ciphertext only; test peer removed, your state byte-identical. Found and fixed: the app had no "I'm OK" button; relay now on the tailnet for the Mac. Security review running |
+| 5 | Layer 2 proof on this server | **done**: paired, fingerprints matched, answered in 0.88 s, rules + log + receipt + cooldown all correct, relay ciphertext only; test peer removed, your state byte-identical. Found and fixed: the app had no "I'm OK" button; relay now on the tailnet for the Mac. Security review: no invariant violations; 3 small fixes applied |
+| 6 | Anna on the Mac | **done**: `docs/ANNA_SETUP.md` + `scripts/anna-setup.sh` (setup/start/token/proof/stop), rehearsed here with a throwaway HOME. Not run on a real Mac (needs you) |
 
 ### 1. The 08:17 stop lookup failure: BVG's public API was down
 Warden log (journal, UTC; 08:17 Berlin = 06:17 UTC). Three hand-overs, each one BVG lookup, each `503`:
