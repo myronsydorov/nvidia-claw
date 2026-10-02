@@ -1,5 +1,49 @@
 # Handoff: production host bring-up (2026-10-01)
 
+## ⚑ Friday 2 Oct, unattended session (started 08:26 Berlin), live state
+
+### Needs Myron (in order)
+_(filled in at the end of the session)_
+
+### Progress
+| # | Block | State |
+|---|---|---|
+| 1 | Stop lookup failure | **done**: cause = BVG's API down (503); lookup now has timeout + 2 retries + disk cache; deployed |
+| 2 | Transit defaults | **done**: direction of travel + cancelled or ≥ 10 min, enforced; deployed; image rebuilt |
+
+### 1. The 08:17 stop lookup failure: BVG's public API was down
+Warden log (journal, UTC; 08:17 Berlin = 06:17 UTC). Three hand-overs, each one BVG lookup, each `503`:
+```
+06:17:03 GET https://v6.bvg.transport.rest/locations?query=Lichtenberg&results=8&poi=false&addresses=false&linesOfStops=true "HTTP/1.1 503 Service Unavailable"
+06:17:03 compile failed
+06:18:02 GET https://v6.bvg.transport.rest/locations?query=Lichtenberg… "HTTP/1.1 503 Service Unavailable"
+06:19:18 GET https://v6.bvg.transport.rest/locations?query=Lichtenberg… "HTTP/1.1 503 Service Unavailable"
+```
+By hand from the host at 06:27 UTC, 5 tries: `503` after 10.1 s each time (`server: Caddy`, empty body). `/stops/900160004/departures` gives the same 503, so does `v6.db.transport.rest`, and `v6.vbb.transport.rest` hangs past 20 s.
+- **Not DNS** (resolves to `thuya.jannisr.de`), **not our firewall** (ufw: allow outgoing), **not a rate limit** (no 429). Its Caddy front end answers, and the upstream behind it times out.
+- **Plainly: BVG's hosted API (`*.transport.rest`, a free community service) is flaky and was down this morning.** It worked at 22:52 UTC last night (the S7 dry run passed).
+- The old one-shot lookup (15 s timeout, no retry) turned that into an immediate build failure.
+
+**Fix** (`8e026e5`, `eb012c0`): `adapters/bvg_lookup.py`
+- 8 s read / 4 s connect timeout;
+- 2 retries with 1 s / 3 s backoff on transport errors, timeouts, 429 and 5xx (never on a 4xx);
+- every resolved stop is cached in `~/.local/share/custody/bvg_stops.json` (next to the DB, `WARDEN_STOP_CACHE` overrides it). A stop resolved once never needs the network again, and a cached stop name also answers a query without a line.
+- The failure sentence now names the real cause: "Looking up the stop failed: BVG's public timetable service isn't answering right now. Nothing was set up; you can try again."
+- I seeded the cache with last night's real live answer for Lichtenberg + S7 → `900160004` (the recorded fixture).
+- Tests: `test_stop_lookup.py` (503 → timeout → success with backoff `[1.0, 3.0]`; 3×503 gives up after exactly 3 calls; 404 not retried; cached stop with BVG down; not-found not cached; corrupt cache ignored; line-less query) and `test_compiler_pipeline.py::test_bvg_down_is_a_lookup_failure_naming_bvg`.
+- **Honest limit:** the cache only saves the *lookup*. A transit watcher still needs BVG's departures endpoint at run time, so while BVG is down a new transit worry fails its dry run (as "the check could not get its data"), and a running one reports `error` (3 in a row → paused, you're told once).
+- The two failed 08:16/08:18 worries are `resolved` (you let them go). Untouched.
+
+### 2. Transit defaults
+- The runtime has `transit_bvg.disruptions(data, line, toward, min_delay_min=10)`: only departures of that line toward the given end station (`S Potsdam Hauptbahnhof` = `Potsdam Hbf`), only cancelled or ≥ 10 min late. `matched == 0` → the watcher must `fail`, never a silent ok.
+- The codegen prompt says to use it. **`codegen.build` enforces it:** a transit watcher that judges departures by hand is sent back for a retry, and so is a `min_delay_min` under 10 unless the worry names that number.
+- Tests: `test_transit_defaults.py` (last night's noise → silent; 10 min or a cancellation in my direction → alert; lower threshold only when the worry asks). The recorded live `train` answer predates the rule and is now a test that it gets sent back.
+- **Live check** (Nemotron, codegen only, no hand-over, no worry created): "S7 from Lichtenberg to Potsdam Hbf … tomorrow ~9:00" built on attempt 1 with `toward="Potsdam Hbf"`, `min_delay_min=10`, stop from the cache while BVG was down.
+- Watcher image rebuilt (`custody-watcher:3ca421840c4e` → `:latest`). Running watchers keep their image, and the change is additive.
+- The S7 worry was **not** handed over again.
+
+---
+
 ## ⚑ Tonight (2026-10-02, ~00:50 Berlin): the S7 hand-over failure, fixed
 
 ### Root cause (from evidence: Warden DB rows, timeline, generated code, BVG API)
